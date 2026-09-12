@@ -33,6 +33,12 @@ const APP = {
 
     esNumerico: false,
     esMayuscula: false,
+
+    // Estados propios del simulador de la demo pública.
+    // Replican la lógica del MBS real usando ^ y # desde teclado convencional.
+    demoMayuscula: false,   // false | "SIMPLE" | "LOCK"
+    demoNumerico: false,
+
 	_bloqueoLecturaAuto: false,
 
     // ── Audio háptico ──────────────────────────────────────────────────
@@ -1374,27 +1380,87 @@ const APP = {
     _demoEmitChar: function(ch) {
         const ahora = performance.now();
         const msDif = this.t_ultima_tecla ? Math.round(ahora - this.t_ultima_tecla) : 0;
+
+        // ── PREFIJO DE MAYÚSCULA: ^  → puntos 4+6 (0x28) ─────────────
+        // Un ^ activa mayúscula simple. Dos ^^ activan LOCK.
+        // El prefijo se representa en Braille, pero NO aparece en el texto generado.
+        if (ch === "^") {
+            if (this.demoMayuscula === "SIMPLE") this.demoMayuscula = "LOCK";
+            else if (this.demoMayuscula === "LOCK") this.demoMayuscula = false;
+            else this.demoMayuscula = "SIMPLE";
+
+            const maskMay = 0x28; // puntos 4+6
+            this.updateDots(maskMay);
+            if (this.maskHex) this.maskHex.textContent = "0x28";
+            if (this.bigChar) this.bigChar.textContent = "MAY";
+            this._setBadge('stateMay', !!this.demoMayuscula);
+            if (this.brailleBuffer) {
+                this.brailleBuffer.textContent += this._brailleDesdeMask(maskMay);
+                this.brailleBuffer.scrollTop = this.brailleBuffer.scrollHeight;
+            }
+            this._beep('cmd');
+            this.t_ultima_tecla = ahora;
+            return;
+        }
+
+        // ── PREFIJO NUMÉRICO: # → puntos 3+4+5+6 (0x3C) ─────────────
+        // El prefijo se representa en Braille, pero NO aparece en el texto generado.
+        if (ch === "#") {
+            this.demoNumerico = true;
+
+            const maskNum = 0x3C; // puntos 3+4+5+6
+            this.updateDots(maskNum);
+            if (this.maskHex) this.maskHex.textContent = "0x3C";
+            if (this.bigChar) this.bigChar.textContent = "NUM";
+            this._setBadge('stateNum', true);
+            if (this.brailleBuffer) {
+                this.brailleBuffer.textContent += this._brailleDesdeMask(maskNum);
+                this.brailleBuffer.scrollTop = this.brailleBuffer.scrollHeight;
+            }
+            this._beep('cmd');
+            this.t_ultima_tecla = ahora;
+            return;
+        }
+
+        // Aplicar estado de mayúscula al carácter visible.
+        let charSalida = ch;
+        if (/[a-zà-ÿñçœ]/i.test(ch) && this.demoMayuscula) {
+            charSalida = ch.toUpperCase();
+            if (this.demoMayuscula === "SIMPLE") {
+                this.demoMayuscula = false;
+                this._setBadge('stateMay', false);
+            }
+        }
+
         const mask = this._maskParaCaracter(ch);
 
         this.updateDots(mask);
         if (this.maskHex) this.maskHex.textContent = "0x" + mask.toString(16).toUpperCase().padStart(2, '0');
-        if (this.bigChar) this.bigChar.textContent = ch === " " ? "␣" : (ch === "\n" ? "↵" : ch);
+        if (this.bigChar) this.bigChar.textContent = charSalida === " " ? "␣" : (charSalida === "\n" ? "↵" : charSalida);
+
         if (this.buffer) {
-            this.buffer.value += ch;
+            this.buffer.value += charSalida;
             this.buffer.scrollTop = this.buffer.scrollHeight;
         }
         this._appendBrailleDemo(ch, mask);
 
-        this._registrarDemoChar(ch, mask, msDif);
+        this._registrarDemoChar(charSalida, mask, msDif);
         this._beep('ok');
 
-        if (ch === " " || ch === "\n") {
+        if (charSalida === " " || charSalida === "\n") {
             if (this.modoVoz && this.palabraActual) {
                 this._speakText(this.palabraActual, { cancel: false });
             }
             this.palabraActual = "";
+
+            // Regla MBS validada: ESPACIO/ENTER cancela ambos estados,
+            // incluido el bloqueo de mayúsculas.
+            this.demoNumerico = false;
+            this.demoMayuscula = false;
+            this._setBadge('stateNum', false);
+            this._setBadge('stateMay', false);
         } else {
-            this.palabraActual += ch;
+            this.palabraActual += charSalida;
         }
     },
 
@@ -1428,6 +1494,10 @@ const APP = {
         if (this.brailleBuffer) this.brailleBuffer.textContent = '';
         this.palabraActual = '';
         this.t_ultima_tecla = 0;
+        this.demoMayuscula = false;
+        this.demoNumerico = false;
+        this._setBadge('stateMay', false);
+        this._setBadge('stateNum', false);
         const textoConCierre = /[\s\n]$/.test(txt) ? txt : txt + ' ';
         this._demoPlayText(textoConCierre);
     },
@@ -1445,6 +1515,10 @@ const APP = {
     if (this.brailleBuffer) {
         this.brailleBuffer.textContent = "";
     }
+    this.demoMayuscula = false;
+    this.demoNumerico = false;
+    this._setBadge('stateMay', false);
+    this._setBadge('stateNum', false);
 
     let dot = 1;
 
@@ -1649,6 +1723,10 @@ const APP = {
         if (this.buffer) this.buffer.value = "";
         if (this.brailleBuffer) this.brailleBuffer.textContent = "";
         this.palabraActual = "";
+        this.demoMayuscula = false;
+        this.demoNumerico = false;
+        this._setBadge('stateMay', false);
+        this._setBadge('stateNum', false);
         // Reseteo completo de todas las métricas
         this._tPrimeraTecla  = 0;
         this._metIntervals   = [];
@@ -1671,4 +1749,4 @@ const APP = {
 
 window.onload = () => APP.init();
 
-// VERSION MBS MULTILINGUE FR + TTS TRANSITION FIX 20260831-V3
+// VERSION MBS DEMO BRAILLE V2 - PREFIJOS ^/# + RESET POR ESPACIO 20260912
