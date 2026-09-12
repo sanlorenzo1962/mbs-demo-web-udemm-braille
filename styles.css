@@ -780,22 +780,53 @@ button:hover { border-color: var(--border-bright); color: var(--text-primary); }
   padding: 18px;
   margin-bottom: 14px;
 }
+
 .braille-text-output {
   width: 100%;
-  min-height: 92px;
-  max-height: 180px;
+  min-height: 110px;
+  max-height: 210px;
   overflow-y: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  padding: 14px;
-  background: var(--bg-input);
+
+  padding: 16px 18px;
+
+  background:
+    linear-gradient(180deg, rgba(0,214,143,0.025), rgba(0,214,143,0.00)),
+    var(--bg-input);
+
   color: var(--accent-green);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-bright);
   border-radius: var(--radius-sm);
-  font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", sans-serif;
-  font-size: 2.15rem;
-  line-height: 1.45;
-  letter-spacing: 0.08em;
+
+  /* Priorizamos fuentes con buen soporte de Braille Unicode */
+  font-family:
+    "Segoe UI Symbol",
+    "Noto Sans Symbols 2",
+    "Arial Unicode MS",
+    sans-serif;
+
+  /* Más grande y más compacto que V1/V2 */
+  font-size: 3rem;
+  line-height: 1.22;
+  letter-spacing: 0.015em;
+
+  text-rendering: geometricPrecision;
+  font-variant-ligatures: none;
+
+  /* Un halo muy leve para separar mejor los puntos del fondo */
+  text-shadow: 0 0 8px rgba(0,214,143,0.16);
 }
 
-/* VERSION DEMO BRAILLE V1 20260912 */
+/* En pantallas angostas se reduce un poco para evitar saltos excesivos */
+@media (max-width: 720px) {
+  .braille-text-output {
+    font-size: 2.35rem;
+    min-height: 96px;
+    max-height: 180px;
+    padding: 14px;
+    letter-spacing: 0;
+  }
+}
+
+/* VERSION DEMO BRAILLE V3 VISUAL 20260912 */
