@@ -391,8 +391,7 @@ body {
 /* ===== IDIOMA ===== */
 .lang-btns { display: flex; gap: 10px; flex-wrap: wrap; }
 .lang-btn {
-  flex: 1 1 calc(50% - 10px);
-  min-width: 135px;
+  flex: 1 1 120px;
   padding: 12px;
   font-family: var(--font-mono);
   font-size: 0.8rem;
@@ -617,3 +616,157 @@ button:hover { border-color: var(--border-bright); color: var(--text-primary); }
   opacity: 0.5;
   cursor: default;
 }
+
+/* ===== DEMO SIN ESP32 ===== */
+.demo-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 18px;
+  margin-bottom: 14px;
+}
+#demoInput {
+  width: 100%;
+  min-height: 92px;
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  line-height: 1.45;
+  padding: 12px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  resize: vertical;
+  outline: none;
+}
+#demoInput:focus { border-color: var(--accent-blue); }
+.demo-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+.btn-demo {
+  background: rgba(45,140,240,0.08);
+  border-color: rgba(45,140,240,0.45);
+  color: var(--accent-blue);
+}
+.btn-demo:hover {
+  background: rgba(45,140,240,0.18);
+  border-color: var(--accent-blue);
+}
+
+
+/* ===== PANEL LATERAL DE LECCIONES ===== */
+.lesson-sidebar-toggle {
+  position: fixed;
+  right: 0;
+  top: 36%;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 10px;
+  border: 1px solid var(--accent-blue);
+  border-right: 0;
+  border-radius: 10px 0 0 10px;
+  background: var(--bg-panel);
+  color: var(--accent-cyan);
+  font-family: var(--font-mono);
+  font-size: .75rem;
+  font-weight: 700;
+  letter-spacing: .06em;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0,0,0,.35);
+}
+.lesson-sidebar-toggle:hover { background: rgba(45,140,240,.16); }
+.lesson-sidebar-toggle[aria-expanded="true"] { opacity: 0; pointer-events: none; }
+.lesson-sidebar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 1300;
+  width: min(390px, 92vw);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  border-left: 1px solid var(--border-bright);
+  box-shadow: -18px 0 42px rgba(0,0,0,.48);
+  transform: translateX(105%);
+  transition: transform .28s ease;
+}
+.lesson-sidebar.open { transform: translateX(0); }
+.lesson-sidebar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 20px 18px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.lesson-sidebar-header .panel-label { margin-bottom: 5px; }
+.lesson-sidebar-subtitle { color: var(--text-muted); font-size: .78rem; }
+.lesson-sidebar-close {
+  width: 36px; height: 36px; border-radius: 50%;
+  border: 1px solid var(--border); background: var(--bg-panel);
+  color: var(--text-primary); font-size: 1.5rem; line-height: 1; cursor: pointer;
+}
+.lesson-sidebar-close:hover { border-color: var(--accent-blue); color: var(--accent-cyan); }
+.lesson-sidebar-body { padding: 18px; overflow-y: auto; flex: 1; }
+.lesson-sidebar-note {
+  padding: 13px 18px 16px; border-top: 1px solid var(--border);
+  color: var(--text-muted); font-size: .72rem; line-height: 1.45;
+}
+.lesson-sidebar-backdrop {
+  position: fixed; inset: 0; z-index: 1250;
+  background: rgba(0,0,0,.48); opacity: 0; pointer-events: none;
+  transition: opacity .28s ease;
+}
+.lesson-sidebar-backdrop.open { opacity: 1; pointer-events: auto; }
+.lesson-chooser { display: grid; grid-template-columns: 1fr; gap: 10px; }
+.lesson-select { min-height: 78px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 5px; text-align: left; }
+.lesson-select strong { color: var(--accent-cyan); font-size: .95rem; }
+.lesson-select span { color: var(--text-muted); font-size: .8rem; }
+.lesson-panel { border: 1px solid var(--border-bright); border-radius: var(--radius-sm); padding: 18px; text-align: center; background: rgba(0,0,0,.12); }
+.lesson-title { color: var(--accent-cyan); font-weight: 700; margin-bottom: 12px; }
+.lesson-instruction { font-size: 1.15rem; margin-bottom: 12px; }
+.lesson-instruction strong { color: var(--accent-yellow); font-size: 1.4rem; }
+.lesson-progress { font-family: monospace; font-size: 1.4rem; letter-spacing: .18em; min-height: 34px; margin-bottom: 8px; }
+.lesson-feedback { min-height: 40px; font-weight: 700; margin: 8px 0; }
+.lesson-feedback.ok { color: var(--accent-green); }
+.lesson-feedback.error { color: #ff6b6b; }
+.lesson-stats { display: flex; justify-content: center; gap: 24px; color: var(--text-muted); font-size: .85rem; margin: 10px 0 14px; }
+.lesson-exit { width: 100%; }
+@media (max-width: 700px) {
+  .lesson-sidebar-toggle { top: auto; bottom: 18px; right: 12px; border-right: 1px solid var(--accent-blue); border-radius: 10px; }
+  .lesson-sidebar { width: 100%; height: min(78vh, 680px); top: auto; bottom: 0; border-left: 0; border-top: 1px solid var(--border-bright); transform: translateY(105%); }
+  .lesson-sidebar.open { transform: translateY(0); }
+}
+
+
+/* ===== PANEL DE LECCIONES: ESCRITORIO SIN SUPERPOSICION ===== */
+@media (min-width: 901px) {
+  body {
+    transition: padding-right .28s ease;
+  }
+  body.lesson-sidebar-open {
+    padding-right: 402px;
+  }
+  body.lesson-sidebar-open .lesson-sidebar-backdrop {
+    display: none !important;
+  }
+  .lesson-sidebar-backdrop.open {
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+/* En tablet y móvil se conserva el panel superpuesto. */
+@media (max-width: 900px) {
+  body.lesson-sidebar-open {
+    padding-right: 12px;
+  }
+}
+
+/* VERSION GITHUB FINAL 20260806-1130 */

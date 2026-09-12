@@ -5,10 +5,9 @@
   <title>MBS (Multilingual Braille System)</title>
  <!--<link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"> -->
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=20260831-2000">
 </head>
 <body>
-<div id="sd-web-badge" style="position:fixed;top:8px;right:8px;z-index:99999;background:#0a7;color:white;padding:8px 12px;border-radius:8px;font:700 14px Arial,sans-serif;box-shadow:0 2px 8px #0008">WEB DESDE SD</div>
 
 <!-- OVERLAY INICIO -->
 <div id="overlay-inicio" onclick="APP.activarAccesibilidad()">
@@ -185,6 +184,44 @@
   </div>
 </div>
 
+
+<!-- PANEL LATERAL DE LECCIONES -->
+<button id="lessonSidebarToggle" class="lesson-sidebar-toggle" onclick="APP.toggleLessonSidebar()" aria-controls="lessonSidebar" aria-expanded="false">
+  <span aria-hidden="true">🎓</span><span id="lessonToggleText">Lecciones</span>
+</button>
+<aside id="lessonSidebar" class="lesson-sidebar" aria-label="Modo lecciones" aria-hidden="true">
+  <div class="lesson-sidebar-header">
+    <div>
+      <div class="panel-label"><span id="lessonModeLabel">🎓 MODO LECCIONES</span></div>
+      <div id="lessonSubtitle" class="lesson-sidebar-subtitle">Prueba de concepto pedagógica</div>
+    </div>
+    <button id="lessonCloseBtn" class="lesson-sidebar-close" onclick="APP.toggleLessonSidebar(false)" aria-label="Cerrar panel de lecciones">×</button>
+  </div>
+  <div class="lesson-sidebar-body">
+    <div id="lessonChooser" class="lesson-chooser">
+      <button onclick="APP.startLesson('letters')" class="btn-action lesson-select">
+        <strong id="lesson1Title">Lección 1</strong><span id="lesson1Desc">Primeras letras: a–f</span>
+      </button>
+      <button onclick="APP.startLesson('word')" class="btn-action lesson-select">
+        <strong id="lesson2Title">Lección 2</strong><span id="lesson2Desc">Primera palabra: CASA</span>
+      </button>
+    </div>
+    <div id="lessonPanel" class="lesson-panel" hidden>
+      <div id="lessonTitle" class="lesson-title">Lección</div>
+      <div id="lessonInstruction" class="lesson-instruction">Pulsa una tecla</div>
+      <div id="lessonProgress" class="lesson-progress" aria-live="polite"></div>
+      <div id="lessonFeedback" class="lesson-feedback" aria-live="assertive"></div>
+      <div class="lesson-stats">
+        <span><span id="lessonHitsLabel">Aciertos</span>: <strong id="lessonHits">0</strong></span>
+        <span><span id="lessonErrorsLabel">Errores</span>: <strong id="lessonErrors">0</strong></span>
+      </div>
+      <button id="lessonExitBtn" onclick="APP.stopLesson()" class="btn-action lesson-exit">Salir de la lección</button>
+    </div>
+  </div>
+  <div id="lessonNote" class="lesson-sidebar-note">En la demo se responde con el teclado convencional. En el MBS real, mediante el teclado braille físico.</div>
+</aside>
+<div id="lessonSidebarBackdrop" class="lesson-sidebar-backdrop" onclick="APP.toggleLessonSidebar(false)"></div>
+
 <!-- MODAL RESUMEN DE SESIÓN -->
 <div id="modalResumen" class="modal-overlay" style="display:none">
   <div class="modal-card">
@@ -255,6 +292,6 @@
   </div>
 </div>
 
-<script src="app.js"></script>
+<script src="app.js?v=20260831-2000"></script>
 </body>
 </html>

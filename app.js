@@ -20,6 +20,16 @@ const APP = {
     _wpmSostenido: 0,      // WPM excluyendo pausas >3s
     _pausasCount: 0,       // cantidad de pausas >3s en la sesión
     _segActivos: 0,        // segundos activos (sin pausas)
+    _langTtsTimer: null,    // estabiliza el cambio de voz al cambiar de idioma
+
+    // Textos estándar de la demo. Se centralizan para que el botón Ejemplo
+    // y el cambio de idioma utilicen siempre el mismo texto por idioma.
+    DEMO_EXAMPLES: {
+        'es-AR': 'Bienvenido a MBS. Esta demostración muestra la representación dinámica de caracteres Braille sin necesidad de hardware conectado. ',
+        'pt-BR': 'Bem-vindo ao MBS. Esta demonstração mostra a representação dinâmica de caracteres Braille sem necessidade de hardware conectado. ',
+        'en-US': 'Welcome to MBS. This demonstration shows dynamic Braille character rendering without connected hardware. ',
+        'fr-FR': 'Bienvenue dans MBS. Cette démonstration montre la représentation dynamique des caractères braille sans matériel connecté. '
+    },
 
     esNumerico: false,
     esMayuscula: false,
@@ -45,6 +55,20 @@ const APP = {
         0x2b:"(", 0x31:")", 0x12:":", 0x06:";", 0x02:",", 0x04:".", 0x24:"-", 0x22:"?", 0x16:"!", 0x36: "COMILLA",0x26:'*', 0x30:"'",0x30: "APOSTROFE"
     },
 
+    // Français — Code Braille Français Uniformisé (CBFU), braille de base.
+    // Se incorporan letras y signos básicos para la DEMO. La notación numérica
+    // francesa específica se deja fuera de esta primera etapa de validación.
+    TABLA_FR: {
+        0x01:"a", 0x03:"b", 0x09:"c", 0x19:"d", 0x11:"e", 0x0b:"f", 0x1b:"g", 0x13:"h", 0x0a:"i", 0x1a:"j",
+        0x05:"k", 0x07:"l", 0x0d:"m", 0x1d:"n", 0x15:"o", 0x0f:"p", 0x1f:"q", 0x17:"r", 0x0e:"s", 0x1e:"t",
+        0x25:"u", 0x27:"v", 0x3a:"w", 0x2d:"x", 0x3d:"y", 0x35:"z",
+        0x2f:"ç", 0x3f:"é", 0x37:"à", 0x2e:"è", 0x3e:"ù",
+        0x21:"â", 0x23:"ê", 0x29:"î", 0x39:"ô", 0x31:"û",
+        0x2b:"ë", 0x3b:"ï", 0x33:"ü", 0x2a:"œ",
+        0x02:",", 0x06:";", 0x12:":", 0x32:".", 0x22:"?", 0x16:"!",
+        0x36:"COMILLA", 0x26:"(", 0x34:")", 0x04:"APOSTROFE", 0x0c:"/", 0x24:"-"
+    },
+
     TABLA_NUM: {
         0x01:"1", 0x03:"2", 0x09:"3", 0x19:"4", 0x11:"5", 0x0b:"6", 0x1b:"7", 0x13:"8", 0x0a:"9", 0x1a:"0", 0x36:"=",
     },
@@ -53,9 +77,7 @@ const APP = {
         const overlay = document.getElementById('overlay-inicio');
         if (overlay) overlay.style.display = 'none';
         const T = this.I18N[this.idiomaActual] || this.I18N['es-AR'];
-        const msg = new SpeechSynthesisUtterance(T.tts_listo);
-        msg.lang = this.idiomaActual;
-        window.speechSynthesis.speak(msg);
+        this._speakText(T.tts_listo, { cancel: true, force: true });
 
         // Avisar al ESP32 que hay un usuario activo en la app
         // (distinto a solo tener una conexion TCP abierta)
@@ -75,10 +97,18 @@ const APP = {
         this.buffer  = document.getElementById('buffer');
         this.bigChar = document.getElementById('bigChar');
         this.maskHex = document.getElementById('maskHex');
+        // MBS 2026-08-07: cargar voces y restaurar el texto de prueba.
+        this._initTTSVoices();
+        this._ensureDemoControls();
 
 // --- ACÁ PEGALO (Dentro de init) ---
         document.querySelectorAll('button').forEach(btn => {
             btn.addEventListener('focus', () => {
+                // Los botones de idioma se anuncian DESPUÉS de aplicar el nuevo idioma.
+                // Si se leen al recibir foco, el evento focus ocurre antes del click y
+                // puede pronunciar "Español/English/Français" con la voz anterior.
+                if (['btnES', 'btnPT', 'btnEN', 'btnFR'].includes(btn.id)) return;
+
                 // Prioridad: aria-label explícito > texto limpio del botón
                 // Se eliminan emojis, símbolos y caracteres no pronunciables
                 const textoRaw = btn.getAttribute('aria-label') || btn.innerText || '';
@@ -92,20 +122,61 @@ const APP = {
                     .replace(/\s+/g, ' ')
                     .trim();
                 if (texto && this.modoVoz) {
-                    window.speechSynthesis.cancel();
-                    const msg = new SpeechSynthesisUtterance(texto);
-                    msg.lang = this.idiomaActual;
-                    window.speechSynthesis.speak(msg);
+                    this._speakText(texto, { cancel: true });
                 }
             });
         });
 // hasta aca va el comando
+        // Entrada de teclado para las lecciones de la demo pública.
+        // Se instala ANTES de intentar la conexión WebSocket para que una falla
+        // de red nunca deje inactivas las lecciones.
+        window.addEventListener('keydown', (e) => {
+            if (!this.lessonActive) return;
+            if (e.ctrlKey || e.altKey || e.metaKey) return;
+            // Durante una lección capturamos la tecla aunque el foco haya quedado
+            // dentro del área de texto de la demo. Así la consigna siempre recibe
+            // la respuesta y evitamos que la letra se escriba dos veces.
+            if (e.key.length !== 1 || !/[a-záéíóúüñ]/i.test(e.key)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            this.handleLessonKey(e.key);
+        }, true);
+        this._applyLessonLanguage();
+
         this._wsRetrySeg = 1;
-        this._wsConectar();
+        try {
+            this._wsConectar();
+        } catch (err) {
+            console.warn('[MBS Demo] WebSocket no disponible; continúa en modo demo.', err);
+            this.demoMode = true;
+            const st = document.getElementById('status');
+            if (st) {
+                st.style.color = 'var(--accent-yellow)';
+                st.innerHTML = '<span class="status-dot" style="background:var(--accent-yellow);animation:none"></span> MODO DEMO';
+            }
+        }
 	},
 
     // ── WebSocket con reconexión automática (backoff exponencial) ─────────
     _wsConectar: function() {
+        // Modo demo: permite usar la WebApp sin ESP32-S3 ni WebSocket.
+        // Se activa automáticamente si se abre como archivo local o agregando ?demo=1 a la URL.
+        const params = new URLSearchParams(window.location.search);
+        const host = window.location.hostname.toLowerCase();
+        this.demoMode = (
+            window.location.protocol === 'file:' ||
+            params.get('demo') === '1' ||
+            host.endsWith('github.io')
+        );
+        if (this.demoMode) {
+            const st = document.getElementById('status');
+            if (st) {
+                st.style.color = 'var(--accent-yellow)';
+                st.innerHTML = '<span class="status-dot" style="background:var(--accent-yellow);animation:none"></span> MODO DEMO';
+            }
+            return;
+        }
+
         this.ws = new WebSocket(`ws://${window.location.host}/ws`);
 
         this.ws.onopen = () => {
@@ -117,16 +188,6 @@ const APP = {
             if (st) { st.style.color = ''; }
             const dot = st ? st.querySelector('.status-dot') : null;
             if (dot) dot.style.cssText = '';
-
-            // Mantener sincronizado el idioma tras una reconexión WebSocket.
-            // Evita que el firmware vuelva a quedar en ES mientras la interfaz muestra otro idioma.
-            const cmdIdioma = {
-                'es-AR': 'SET_ES',
-                'pt-BR': 'SET_PT',
-                'en-US': 'SET_EN',
-                'fr-FR': 'SET_FR'
-            }[this.idiomaActual];
-            if (cmdIdioma) this.ws.send(cmdIdioma);
         },
 
         this.ws.onclose = () => {
@@ -146,9 +207,7 @@ const APP = {
             // --- 1. BLOQUE DE COMILLAS (CON MÉTRICAS) ---
             if (data.val === "COMILLA") {
                 if (this.palabraActual.length > 0) {
-                    const msgP = new SpeechSynthesisUtterance(this.palabraActual);
-                    msgP.lang = this.idiomaActual;
-                    window.speechSynthesis.speak(msgP);
+                    this._speakText(this.palabraActual, { cancel: false });
                     this.palabraActual = ""; 
                 }
                 this.buffer.value += '"';
@@ -168,9 +227,8 @@ const APP = {
                 }
 
                 setTimeout(() => {
-                    const msgC = new SpeechSynthesisUtterance("comilla");
-                    msgC.lang = this.idiomaActual;
-                    window.speechSynthesis.speak(msgC);
+                    const T = this.I18N[this.idiomaActual] || this.I18N['es-AR'];
+                    this._speakText(T.tts_comilla || 'Comilla', { cancel: false });
                 }, 300);
                 return; 
             }
@@ -178,9 +236,7 @@ const APP = {
             // --- 2. BLOQUE DE APÓSTROFE (CON MÉTRICAS) ---
             if (data.val === "APOSTROFE") {
                 if (this.palabraActual.length > 0) {
-                    const msgP = new SpeechSynthesisUtterance(this.palabraActual);
-                    msgP.lang = this.idiomaActual;
-                    window.speechSynthesis.speak(msgP);
+                    this._speakText(this.palabraActual, { cancel: false });
                     this.palabraActual = ""; 
                 }
                 this.buffer.value += "'";
@@ -199,9 +255,8 @@ const APP = {
                 }
 
                 setTimeout(() => {
-                    const msgA = new SpeechSynthesisUtterance("apóstrofe");
-                    msgA.lang = this.idiomaActual;
-                    window.speechSynthesis.speak(msgA);
+                    const T = this.I18N[this.idiomaActual] || this.I18N['es-AR'];
+                    this._speakText(T.tts_apostrofe || 'Apóstrofe', { cancel: false });
                 }, 300);
                 return; 
             }
@@ -219,14 +274,7 @@ const APP = {
                 const ahora = performance.now();
                 const msDif = this.t_ultima_tecla ? Math.round(ahora - this.t_ultima_tecla) : 0;
 
-                // Prefijo numérico según idioma.
-                // ES/PT/EN: 0x3C (puntos 3-4-5-6) sigue siendo prefijo numérico.
-                // FR (Antoine): 0x20 (punto 6) es el modificador matemático.
-                // En FR, 0x3C debe quedar libre porque representa el dígito 0.
-                const esFrances = (this.idiomaActual === 'fr-FR' && data.lang === 'FR');
-
-                if ((!esFrances && m === 0x3c) ||
-                    (esFrances && m === 0x20 && data.val === "PREFIJO")) {
+                if (m === 0x3c) {
                     this.esNumerico = true;
                     esComando = true;
                     this._setBadge('stateNum', true);
@@ -245,14 +293,8 @@ const APP = {
                         this.esMayuscula = false; 
                         this._setBadge('stateNum', false);
                         this._setBadge('stateMay', false);
-                    } else if (this.idiomaActual === 'fr-FR' && data.lang === 'FR') {
-                        // FASE 2A FR: el firmware es la fuente de verdad para el carácter.
-                        // Evitamos las colisiones de las tablas ES/PT (ej.: 0x2B, 0x31, 0x3B).
-                        if (data.val && data.val !== "?" && data.val !== "PREFIJO") {
-                            finalChar = data.val;
-                        }
                     } else {
-                        // Accesos directos validados ES/PT/EN: se preservan sin cambios.
+                        // Tus accesos directos
                         if (m === 0x2b) finalChar = "(";
                         else if (m === 0x31) finalChar = ")";
                         else if (m === 0x1e) finalChar = "t";
@@ -269,7 +311,7 @@ const APP = {
                         else if (m === 0x24) finalChar = "-";
 
                         if (finalChar === "") {
-                            const tabla = (this.idiomaActual === 'es-AR') ? this.TABLA_ES : this.TABLA_PT;
+                            const tabla = this.idiomaActual === 'es-AR' ? this.TABLA_ES : (this.idiomaActual === 'fr-FR' ? this.TABLA_FR : this.TABLA_PT);
                             finalChar = this.esNumerico ? (this.TABLA_NUM[m] || tabla[m]) : tabla[m];
                         }
                     }
@@ -277,7 +319,7 @@ const APP = {
 
                 if (!esComando && finalChar) {
                     let charFinal = finalChar;
-                    if (this.esMayuscula && /[a-zà-ÿñçœ]/i.test(charFinal)) {
+                    if (this.esMayuscula && /[a-zà-ÿñçœ]/.test(charFinal)) {
                         charFinal = charFinal.toUpperCase();
                         if (this.esMayuscula === "SIMPLE") {
                             this.esMayuscula = false;
@@ -308,9 +350,7 @@ const APP = {
 
                     if (charFinal === " " || charFinal === "\n") {
                         if (this.modoVoz && this.palabraActual) {
-                            const msg = new SpeechSynthesisUtterance(this.palabraActual);
-                            msg.lang = this.idiomaActual;
-                            window.speechSynthesis.speak(msg);
+                            this._speakText(this.palabraActual, { cancel: false });
                         }
                         this.palabraActual = "";
                     } else {
@@ -593,6 +633,18 @@ const APP = {
                 `Pauses longer than three seconds: ${s.pausas}. ` +
                 `Well done! Keep practicing.`;
         }
+        if (this.idiomaActual === 'fr-FR') {
+            return `Résumé de la session de ${this.nombreUsuario}. ` +
+                `Durée : ${s.duracion}. ` +
+                `Vous avez saisi ${s.chars} caractères et ${s.words} mots. ` +
+                `Vitesse moyenne : ${s.wpmProm} mots par minute. ` +
+                `Vitesse soutenue : ${s.wpmSost} mots par minute. ` +
+                `Vitesse maximale : ${s.wpmPico} mots par minute. ` +
+                `Temps moyen par touche : ${fmt(s.avgMs)} millisecondes. ` +
+                `Sigma de régularité : ${fmt(s.sigma)} millisecondes. ` +
+                `Pauses de plus de trois secondes : ${s.pausas}. ` +
+                `Très bien ! Continuez à vous entraîner.`;
+        }
         if (this.idiomaActual === 'pt-BR') {
             return `Resumo da sessão de ${this.nombreUsuario}. ` +
                 `Duração: ${s.duracion}. ` +
@@ -627,10 +679,6 @@ const APP = {
 
         window.speechSynthesis.cancel();
 
-        const utt = new SpeechSynthesisUtterance(texto);
-        utt.lang = this.idiomaActual;
-        utt.rate = 0.95;
-
         if (btnTTS) {
             btnTTS.textContent = T.tts_btn_reproduciendo || '⏸ Reproduciendo...';
             btnTTS.disabled = true;
@@ -643,24 +691,25 @@ const APP = {
             progreso = Math.min(progreso + 0.8, 90);
             if (bar) bar.style.width = progreso + '%';
         }, 200);
-
-        utt.onend = () => {
-            clearInterval(this._ttsProgressTimer);
-            if (bar) bar.style.width = '100%';
-            if (btnTTS) {
-                btnTTS.textContent = T.tts_btn_repetir || '↺ Repetir';
-                btnTTS.disabled = false;
+        this._speakText(texto, {
+            cancel: true,
+            rate: 0.95,
+            onend: () => {
+                clearInterval(this._ttsProgressTimer);
+                if (bar) bar.style.width = '100%';
+                if (btnTTS) {
+                    btnTTS.textContent = T.tts_btn_repetir || '↺ Repetir';
+                    btnTTS.disabled = false;
+                }
+            },
+            onerror: () => {
+                clearInterval(this._ttsProgressTimer);
+                if (btnTTS) {
+                    btnTTS.textContent = T.tts_btn_reproducir || '▶ Reproducir';
+                    btnTTS.disabled = false;
+                }
             }
-        };
-        utt.onerror = () => {
-            clearInterval(this._ttsProgressTimer);
-            if (btnTTS) {
-                btnTTS.textContent = T.tts_btn_reproducir || '▶ Reproducir';
-                btnTTS.disabled = false;
-            }
-        };
-
-        window.speechSynthesis.speak(utt);
+        });
     },
 
     cerrarResumen: function() {
@@ -687,11 +736,124 @@ const APP = {
         this._speedTtsTimer = setTimeout(() => {
             if (!this.modoVoz) return;
             const T = this.I18N[this.idiomaActual] || this.I18N['es-AR'];
-            window.speechSynthesis.cancel();
-            const msg = new SpeechSynthesisUtterance(`${T.tts_velocidad} ${val}`);
-            msg.lang = this.idiomaActual;
-            window.speechSynthesis.speak(msg);
+            this._speakText(`${T.tts_velocidad} ${val}`, { cancel: true });
         }, 600);
+    },
+
+    // ===== TTS MULTILINGÜE CENTRALIZADO (2026-08-07) =====
+    _voices: [],
+    _voicesReady: false,
+    _voiceListenerInstalled: false,
+
+    _initTTSVoices: function() {
+        if (!('speechSynthesis' in window)) return;
+        const cargar = () => {
+            this._voices = window.speechSynthesis.getVoices() || [];
+            this._voicesReady = this._voices.length > 0;
+            this._updateVoiceStatus();
+        };
+        cargar();
+        if (!this._voiceListenerInstalled) {
+            window.speechSynthesis.addEventListener('voiceschanged', cargar);
+            this._voiceListenerInstalled = true;
+        }
+    },
+
+    _selectVoice: function(lang) {
+        const voices = (this._voices && this._voices.length)
+            ? this._voices
+            : (window.speechSynthesis.getVoices() || []);
+        if (!voices.length) return null;
+
+        const target = (lang || this.idiomaActual || 'es-AR').toLowerCase();
+        const base = target.split('-')[0];
+        const norm = v => (v.lang || '').toLowerCase().replace('_', '-');
+        const name = v => (v.name || '').toLowerCase();
+        let v = voices.find(x => norm(x) === target);
+        if (v) return v;
+
+        if (target === 'pt-br') {
+            v = voices.find(x => norm(x).startsWith('pt-br'));
+            if (v) return v;
+            v = voices.find(x => norm(x).startsWith('pt') && /brasil|brazil/.test(name(x)));
+            if (v) return v;
+            // Para la demo educativa preferimos silencio antes que usar pt-PT o es-*.
+            return null;
+        }
+        if (target === 'es-ar') {
+            return voices.find(x => norm(x).startsWith('es-ar')) ||
+                   voices.find(x => norm(x).startsWith('es')) || null;
+        }
+        if (target === 'en-us') {
+            return voices.find(x => norm(x).startsWith('en-us')) ||
+                   voices.find(x => norm(x).startsWith('en')) || null;
+        }
+        if (target === 'fr-fr') {
+            return voices.find(x => norm(x).startsWith('fr-fr')) ||
+                   voices.find(x => norm(x).startsWith('fr')) || null;
+        }
+        return voices.find(x => norm(x).startsWith(base)) || null;
+    },
+
+    _voiceStatusText: function() {
+        const lang = this.idiomaActual || 'es-AR';
+        const voice = this._selectVoice(lang);
+        if (voice) return `${voice.name} (${voice.lang})`;
+        if (!this._voicesReady) {
+            return lang === 'pt-BR' ? 'Carregando voz...' :
+                   lang === 'en-US' ? 'Loading voice...' :
+                   lang === 'fr-FR' ? 'Chargement de la voix...' : 'Cargando voz...';
+        }
+        return lang === 'pt-BR' ? 'Sem voz em português brasileiro disponível neste dispositivo' :
+               lang === 'en-US' ? 'No English voice available on this device' :
+               lang === 'fr-FR' ? 'Aucune voix française disponible sur cet appareil' :
+               'No hay una voz en español disponible en este equipo';
+    },
+
+    _updateVoiceStatus: function() {
+        const el = document.getElementById('demoVoiceStatus');
+        if (!el) return;
+        const prefix = this.idiomaActual === 'en-US' ? 'Voice' : (this.idiomaActual === 'fr-FR' ? 'Voix' : 'Voz');
+        el.textContent = `${prefix}: ${this._voiceStatusText()}`;
+    },
+
+    _speakText: function(text, opts = {}) {
+        if (!text || !('speechSynthesis' in window)) return null;
+        if (!this.modoVoz && !opts.force) return null;
+
+        const synth = window.speechSynthesis;
+        const lang = opts.lang || this.idiomaActual || 'es-AR';
+        let voice = this._selectVoice(lang);
+
+        if (!voice && !this._voicesReady && !opts._retry) {
+            const retry = () => this._speakText(text, { ...opts, _retry: true });
+            synth.addEventListener('voiceschanged', retry, { once: true });
+            setTimeout(() => {
+                if (!this._voicesReady) this._speakText(text, { ...opts, _retry: true });
+            }, 700);
+            return null;
+        }
+
+        // Si no existe una voz del idioma solicitado, no usamos una voz de otro idioma.
+        if (!voice) {
+            console.warn(`[MBS TTS] No hay voz compatible con ${lang}. Se omite la locución.`);
+            this._updateVoiceStatus();
+            if (typeof opts.onerror === 'function') opts.onerror(new Error('VOICE_NOT_AVAILABLE'));
+            return null;
+        }
+
+        const utt = new SpeechSynthesisUtterance(text);
+        utt.lang = voice.lang || lang;
+        utt.voice = voice;
+        utt.rate = opts.rate || 1.0;
+        utt.pitch = opts.pitch || 1.0;
+        utt.volume = opts.volume || 1.0;
+        if (typeof opts.onend === 'function') utt.onend = opts.onend;
+        if (typeof opts.onerror === 'function') utt.onerror = opts.onerror;
+        if (opts.cancel !== false) synth.cancel();
+        synth.speak(utt);
+        this._updateVoiceStatus();
+        return utt;
     },
 
     // ===== DICCIONARIO i18n =====
@@ -716,6 +878,7 @@ const APP = {
             tts_sonido_on:'Sonido activado', tts_sonido_off:'Sonido desactivado',
             tts_limpiar:'Limpiar', tts_csv:'Exportar C S V', tts_txt:'Exportar texto',
             tts_velocidad:'Velocidad',
+            tts_listo:'Sistema listo', tts_idioma:'Español',
             btn_click_on:'Click: ON', btn_click_off:'Click: OFF',
             tts_click_on:'Click activado', tts_click_off:'Click desactivado',
 			tts_comilla: "Comilla",
@@ -753,6 +916,34 @@ const APP = {
             tts_btn_reproduciendo: '⏸ Reproduzindo...',
             tts_btn_repetir: '↺ Repetir'
         },
+        'fr-FR': {
+            lbl_celda:'CELLULE BRAILLE', lbl_metricas:'MÉTRIQUES EN TEMPS RÉEL',
+            lbl_velocidad:'VITESSE MAXIMALE', lbl_idioma:'LANGUE',
+            lbl_texto:'TEXTE GÉNÉRÉ', lbl_sesion:'SESSION ET ACTIONS',
+            lbl_placeholder:'En attente de saisie au clavier braille...',
+            lbl_wpm:'MPM', lbl_chars:'CARACTÈRES', lbl_words:'MOTS', lbl_ms:'ms/TOUCHE',
+            lbl_wpmbar:'Vitesse relative (max. 60 MPM)',
+            btn_iniciar:'Démarrer la session', btn_detener:'Arrêter la session',
+            btn_sonido_on:'Son : ON', btn_sonido_off:'Son : OFF',
+            btn_limpiar:'Effacer', btn_txt:'Exporter TXT', btn_csv:'Exporter CSV',
+            modal_titulo:'RÉSUMÉ DE SESSION', modal_wpm:'MPM moyen',
+            modal_chars:'Caractères', modal_words:'Mots', modal_dur:'Durée',
+            modal_avgms:'ms/touche moy.', modal_maxwpm:'MPM maximum',
+            modal_cerrar:'Fermer', modal_csv:'Télécharger CSV',
+            tts_listo:'Système prêt', tts_idioma:'Français',
+            btn_voz_on:'Voix : ON', btn_voz_off:'Voix : OFF',
+            lbl_sonido_tipo:'Type de son',
+            tts_iniciar:'Session démarrée', tts_detener:'Session arrêtée',
+            tts_sonido_on:'Son activé', tts_sonido_off:'Son désactivé',
+            tts_limpiar:'Effacer', tts_csv:'Exporter C S V', tts_txt:'Exporter le texte',
+            tts_velocidad:'Vitesse',
+            btn_click_on:'Clic : ON', btn_click_off:'Clic : OFF',
+            tts_click_on:'Clic activé', tts_click_off:'Clic désactivé',
+            tts_comilla:'Guillemet', tts_apostrofe:'Apostrophe',
+            tts_btn_reproducir:'▶ Lire',
+            tts_btn_reproduciendo:'⏸ Lecture...',
+            tts_btn_repetir:'↺ Relire'
+        },
         'en-US': {
             lbl_celda:'BRAILLE CELL', lbl_metricas:'REAL-TIME METRICS',
             lbl_velocidad:'MAX SPEED', lbl_idioma:'LANGUAGE',
@@ -780,34 +971,6 @@ const APP = {
             tts_btn_reproducir: '▶ Play',
             tts_btn_reproduciendo: '⏸ Playing...',
             tts_btn_repetir: '↺ Repeat'
-        },
-        'fr-FR': {
-            lbl_celda:'CELLULE BRAILLE', lbl_metricas:'MESURES EN TEMPS RÉEL',
-            lbl_velocidad:'VITESSE MAXIMALE', lbl_idioma:'LANGUE',
-            lbl_texto:'TEXTE GÉNÉRÉ', lbl_sesion:'SESSION ET ACTIONS',
-            lbl_placeholder:'En attente de saisie au clavier Braille...',
-            lbl_wpm:'MPM', lbl_chars:'CARACTÈRES', lbl_words:'MOTS', lbl_ms:'ms/TOUCHE',
-            lbl_wpmbar:'Vitesse relative (max. 60 MPM)',
-            btn_iniciar:'Démarrer la session', btn_detener:'Arrêter la session',
-            btn_sonido_on:'Son : ON', btn_sonido_off:'Son : OFF',
-            btn_limpiar:'Effacer', btn_txt:'Exporter TXT', btn_csv:'Exporter CSV',
-            modal_titulo:'RÉSUMÉ DE LA SESSION', modal_wpm:'MPM moyenne',
-            modal_chars:'Caractères', modal_words:'Mots', modal_dur:'Durée',
-            modal_avgms:'ms/touche moy.', modal_maxwpm:'MPM maximale',
-            modal_cerrar:'Fermer', modal_csv:'Télécharger CSV',
-            tts_listo:'Système prêt', tts_idioma:'Français',
-            btn_voz_on:'Voix : ON', btn_voz_off:'Voix : OFF',
-            lbl_sonido_tipo:'Type de son',
-            tts_iniciar:'Session démarrée', tts_detener:'Session arrêtée',
-            tts_sonido_on:'Son activé', tts_sonido_off:'Son désactivé',
-            tts_limpiar:'Effacer', tts_csv:'Exporter C S V', tts_txt:'Exporter le texte',
-            tts_velocidad:'Vitesse',
-            btn_click_on:'Clic : ON', btn_click_off:'Clic : OFF',
-            tts_click_on:'Clic activé', tts_click_off:'Clic désactivé',
-            tts_comilla:'Guillemet', tts_apostrofe:'Apostrophe',
-            tts_btn_reproducir:'▶ Écouter',
-            tts_btn_reproduciendo:'⏸ Lecture...',
-            tts_btn_repetir:'↺ Répéter'
         }
     },
 
@@ -822,11 +985,7 @@ const APP = {
 
         if (textoParaDecir === 'tts_comilla') textoParaDecir = 'Comilla';
         if (textoParaDecir === 'tts_apostrofe') textoParaDecir = 'Apóstrofe';
-
-        window.speechSynthesis.cancel();
-        const msg = new SpeechSynthesisUtterance(textoParaDecir);
-        msg.lang = this.idiomaActual;
-        window.speechSynthesis.speak(msg);
+        this._speakText(textoParaDecir, { cancel: true });
     },
 
     _aplicarIdioma: function() {
@@ -870,14 +1029,24 @@ const APP = {
         set('resLblMaxWpm', T.modal_maxwpm);
         set('btn_modal_cerrar', T.modal_cerrar);
         set('btn_modal_csv', T.modal_csv);
+        this._updateDemoLanguage();
+        this._updateVoiceStatus();
     },
 
     setLang: function(lang) {
+        // Cortar inmediatamente cualquier frase de la voz anterior. El foco del botón
+        // ya no genera TTS para los idiomas, evitando que la primera palabra salga
+        // con el acento del idioma previo.
+        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+        clearTimeout(this._langTtsTimer);
+
         if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(lang);
         if      (lang === 'SET_ES') this.idiomaActual = 'es-AR';
         else if (lang === 'SET_PT') this.idiomaActual = 'pt-BR';
         else if (lang === 'SET_EN') this.idiomaActual = 'en-US';
         else if (lang === 'SET_FR') this.idiomaActual = 'fr-FR';
+
+        const targetLang = this.idiomaActual;
 
         document.getElementById('btnES').classList.toggle('active', lang === 'SET_ES');
         document.getElementById('btnPT').classList.toggle('active', lang === 'SET_PT');
@@ -887,12 +1056,18 @@ const APP = {
         if (btnFR) btnFR.classList.toggle('active', lang === 'SET_FR');
 
         this._aplicarIdioma();
+        this._applyLessonLanguage();
+        const T = this.I18N[targetLang];
+        this._updateDemoLanguage();
+        this._updateVoiceStatus();
 
-        const T = this.I18N[this.idiomaActual];
-        const msg = new SpeechSynthesisUtterance(T.tts_idioma);
-        msg.lang = this.idiomaActual;
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(msg);
+        // Pequeña espera para que el navegador estabilice la voz recién seleccionada.
+        // El chequeo de targetLang evita anunciar un idioma viejo si el usuario cambia
+        // muy rápido entre botones.
+        this._langTtsTimer = setTimeout(() => {
+            if (this.idiomaActual !== targetLang) return;
+            this._speakText(T.tts_idioma, { cancel: true, force: true, lang: targetLang });
+        }, 250);
     },
 
     downloadCSV: function() {
@@ -965,10 +1140,7 @@ const APP = {
             ? `<span>🔈</span> ${T.btn_sonido_on}`
             : `<span>🔇</span> ${T.btn_sonido_off}`;
         const clave = this.modoVoz ? 'tts_sonido_on' : 'tts_sonido_off';
-        window.speechSynthesis.cancel();
-        const msg = new SpeechSynthesisUtterance(T[clave]);
-        msg.lang = this.idiomaActual;
-        window.speechSynthesis.speak(msg);
+        this._speakText(T[clave], { cancel: true, force: true });
     },
 
     toggleClick: function() {
@@ -1066,8 +1238,377 @@ const APP = {
         this._iniciarTimer();
     },
 
+
+
+    // ===== CONTROLES DE TEXTO DE PRUEBA =====
+    _ensureDemoControls: function() {
+        if (document.getElementById('demoInput')) return;
+        const langCard = document.querySelector('.lang-card');
+        if (!langCard) return;
+
+        const card = document.createElement('div');
+        card.id = 'demoTextCard';
+        card.style.cssText = 'background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:18px;margin-bottom:14px;';
+        card.innerHTML = `
+            <div class="panel-label"><span id="lbl_demo_text">TEXTO DE PRUEBA</span></div>
+            <textarea id="demoInput" rows="2" style="width:100%;box-sizing:border-box;font-family:var(--font-mono);font-size:1rem;line-height:1.45;padding:12px;background:var(--bg-input);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-sm);resize:vertical;outline:none;" placeholder="Escribí un texto para probar la celda Braille y la voz"></textarea>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;">
+                <button id="demoRunBtn" type="button" class="btn-action"><span id="btn_demo_run">▶ Enviar prueba</span></button>
+                <button id="demoQuickBtn" type="button" class="btn-action"><span id="btn_demo_example">Ejemplo</span></button>
+            </div>
+            <div id="demoVoiceStatus" style="margin-top:9px;font-family:var(--font-mono);font-size:.68rem;color:var(--text-muted);" aria-live="polite"></div>
+        `;
+        langCard.insertAdjacentElement('afterend', card);
+        document.getElementById('demoRunBtn').addEventListener('click', () => this.demoRun());
+        document.getElementById('demoQuickBtn').addEventListener('click', () => this.demoQuick());
+        const input = document.getElementById('demoInput');
+        if (input) {
+            input.addEventListener('keydown', e => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                    e.preventDefault();
+                    this.demoRun();
+                }
+            });
+        }
+        this._updateDemoLanguage();
+        this._updateVoiceStatus();
+    },
+
+    _updateDemoLanguage: function() {
+        const D = {
+            'es-AR': { title:'TEXTO DE PRUEBA', placeholder:'Escribí un texto para probar la celda Braille y la voz', run:'▶ Enviar prueba', example:'Ejemplo' },
+            'pt-BR': { title:'TEXTO DE TESTE', placeholder:'Digite um texto para testar a célula Braille e a voz', run:'▶ Enviar teste', example:'Exemplo' },
+            'en-US': { title:'TEST TEXT', placeholder:'Type text to test the Braille cell and voice', run:'▶ Run test', example:'Example' },
+            'fr-FR': { title:'TEXTE DE TEST', placeholder:'Saisissez un texte pour tester la cellule braille et la voix', run:'▶ Lancer le test', example:'Exemple' }
+        };
+        const t = D[this.idiomaActual] || D['es-AR'];
+        const set = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
+        set('lbl_demo_text', t.title);
+        set('btn_demo_run', t.run);
+        set('btn_demo_example', t.example);
+        const input = document.getElementById('demoInput');
+        if (input) {
+            input.placeholder = t.placeholder;
+
+            // El cuadro de prueba queda libre para que el usuario escriba su propio texto.
+            // Los ejemplos estándar solo aparecen al pulsar el botón Ejemplo.
+            // Si había quedado visible un ejemplo de otro idioma, se limpia al cambiar.
+            const current = input.value.trim();
+            const isStandardExample = current && Object.values(this.DEMO_EXAMPLES)
+                .some(example => example.trim() === current);
+            if (isStandardExample) input.value = '';
+        }
+    },
+
+    // ===== DEMO SIN ESP32 =====
+    _tablaActual: function() {
+        if (this.idiomaActual === 'pt-BR') return this.TABLA_PT;
+        if (this.idiomaActual === 'fr-FR') return this.TABLA_FR;
+        return this.TABLA_ES;
+    },
+
+    _maskParaCaracter: function(ch) {
+        if (ch === ' ' || ch === '\n') return 0;
+        const lower = ch.toLowerCase();
+        const tabla = this._tablaActual();
+        for (const [mask, val] of Object.entries(tabla)) {
+            if (val === lower) return parseInt(mask, 10);
+        }
+        for (const [mask, val] of Object.entries(this.TABLA_NUM)) {
+            if (val === ch) return parseInt(mask, 10);
+        }
+        return 0;
+    },
+
+    _registrarDemoChar: function(charFinal, mask, msDif) {
+        const ahora = performance.now();
+        if (this.sesionActiva) {
+            this.logData.push({
+                hora: new Date().toLocaleTimeString(),
+                ms_dif: msDif,
+                mask: "0x" + mask.toString(16).toUpperCase().padStart(2, '0'),
+                char: charFinal === " " ? "[ESPACIO]" : (charFinal === "\n" ? "[ENTER]" : charFinal),
+                wpm_acum: document.getElementById('wpmValue').textContent,
+                pausa: (msDif > 3000) ? "SI" : "NO",
+                seg_sesion: Math.floor((ahora - this.t_inicio_sesion) / 1000)
+            });
+            this._actualizarMetricas(msDif);
+        } else {
+            this._actualizarMetricas(msDif);
+        }
+        this.t_ultima_tecla = ahora;
+    },
+
+    _demoEmitChar: function(ch) {
+        const ahora = performance.now();
+        const msDif = this.t_ultima_tecla ? Math.round(ahora - this.t_ultima_tecla) : 0;
+        const mask = this._maskParaCaracter(ch);
+
+        this.updateDots(mask);
+        if (this.maskHex) this.maskHex.textContent = "0x" + mask.toString(16).toUpperCase().padStart(2, '0');
+        if (this.bigChar) this.bigChar.textContent = ch === " " ? "␣" : (ch === "\n" ? "↵" : ch);
+        if (this.buffer) {
+            this.buffer.value += ch;
+            this.buffer.scrollTop = this.buffer.scrollHeight;
+        }
+
+        this._registrarDemoChar(ch, mask, msDif);
+        this._beep('ok');
+
+        if (ch === " " || ch === "\n") {
+            if (this.modoVoz && this.palabraActual) {
+                this._speakText(this.palabraActual, { cancel: false });
+            }
+            this.palabraActual = "";
+        } else {
+            this.palabraActual += ch;
+        }
+    },
+
+    _demoPlayText: function(texto) {
+        if (!texto) return;
+        window.speechSynthesis.cancel();
+        this._demoQueue = Array.from(texto);
+        clearInterval(this._demoTimer);
+        const wpm = parseInt(document.getElementById('speedValue')?.textContent || '20', 10);
+        const intervalo = Math.max(80, Math.round(60000 / (Math.max(wpm, 1) * 5)));
+        this._demoTimer = setInterval(() => {
+            const ch = this._demoQueue.shift();
+            if (ch === undefined) {
+                clearInterval(this._demoTimer);
+                return;
+            }
+            this._demoEmitChar(ch);
+        }, intervalo);
+    },
+
+    demoRun: function() {
+        const txt = (document.getElementById('demoInput')?.value || '').trim();
+        if (!txt) return;
+
+        // Antes de iniciar una nueva prueba, cortar cualquier locución pendiente
+        // (por ejemplo, la lectura automática de un botón que acababa de recibir foco).
+        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+
+        clearInterval(this._demoTimer);
+        if (this.buffer) this.buffer.value = '';
+        this.palabraActual = '';
+        this.t_ultima_tecla = 0;
+        const textoConCierre = /[\s\n]$/.test(txt) ? txt : txt + ' ';
+        this._demoPlayText(textoConCierre);
+    },
+
+    demoQuick: function() {
+
+    const txt = this.DEMO_EXAMPLES[this.idiomaActual] || this.DEMO_EXAMPLES['es-AR'];
+
+    const input = document.getElementById('demoInput');
+    if (input) input.value = txt;
+
+    if (this.buffer) {
+        this.buffer.value = "INICIANDO DEMOSTRACIÓN...\n";
+    }
+
+    let dot = 1;
+
+    const barrido = setInterval(() => {
+
+        for (let i = 1; i <= 6; i++) {
+            if (this.dots[i]) {
+                this.dots[i].classList.remove('active');
+            }
+        }
+
+        if (dot <= 6) {
+            if (this.dots[dot]) {
+                this.dots[dot].classList.add('active');
+            }
+            dot++;
+        } else {
+            clearInterval(barrido);
+
+            for (let i = 1; i <= 6; i++) {
+                if (this.dots[i]) {
+                    this.dots[i].classList.remove('active');
+                }
+            }
+
+            this._demoPlayText(txt);
+        }
+
+    }, 120);
+},
+    // ===== LECCIONES GUIADAS (DEMO PÚBLICA) =====
+    _lessonStrings: function() {
+        const all = {
+            'es-AR': {
+                toggle:'Lecciones', mode:'🎓 MODO LECCIONES', subtitle:'Prueba de concepto pedagógica',
+                close:'Cerrar panel de lecciones', l1:'Lección 1', l1d:'Primeras letras: a–f',
+                l2:'Lección 2', l2d:'Primera palabra: CASA', generic:'Lección', pressKey:'Pulsa una tecla',
+                hits:'Aciertos', errors:'Errores', exit:'Salir de la lección',
+                note:'En la demo se responde con el teclado convencional. En el MBS real, mediante el teclado braille físico.',
+                titleLetters:'Lección 1 — Primeras letras', titleWord:'Lección 2 — Primera palabra',
+                press:'Pulsa la letra', correct:'Correcto', wrong:(c)=>`Pulsaste “${c}”. Intenta nuevamente.`,
+                wrongVoice:'No es correcto. Intenta nuevamente.', completed:'Lección completada',
+                result:(h,e)=>`¡Muy bien! ${h} aciertos y ${e} errores.`,
+                resultVoice:(h,e)=>`Lección completada. ${h} aciertos y ${e} errores.`, of:'de'
+            },
+            'pt-BR': {
+                toggle:'Lições', mode:'🎓 MODO LIÇÕES', subtitle:'Prova de conceito pedagógica',
+                close:'Fechar painel de lições', l1:'Lição 1', l1d:'Primeiras letras: a–f',
+                l2:'Lição 2', l2d:'Primeira palavra: LAR', generic:'Lição', pressKey:'Pressione uma tecla',
+                hits:'Acertos', errors:'Erros', exit:'Sair da lição',
+                note:'Na demonstração, a resposta é feita com o teclado convencional. No MBS real, com o teclado braille físico.',
+                titleLetters:'Lição 1 — Primeiras letras', titleWord:'Lição 2 — Primeira palavra',
+                press:'Pressione a letra', correct:'Correto', wrong:(c)=>`Você pressionou “${c}”. Tente novamente.`,
+                wrongVoice:'Não está correto. Tente novamente.', completed:'Lição concluída',
+                result:(h,e)=>`Muito bem! ${h} acertos e ${e} erros.`,
+                resultVoice:(h,e)=>`Lição concluída. ${h} acertos e ${e} erros.`, of:'de'
+            },
+            'fr-FR': {
+                toggle:'Leçons', mode:'🎓 MODE LEÇONS', subtitle:'Preuve de concept pédagogique',
+                close:'Fermer le panneau des leçons', l1:'Leçon 1', l1d:'Premières lettres : a–f',
+                l2:'Leçon 2', l2d:'Premier mot : MAISON', generic:'Leçon', pressKey:'Appuyez sur une touche',
+                hits:'Réussites', errors:'Erreurs', exit:'Quitter la leçon',
+                note:'Dans la démo, la réponse se fait avec le clavier conventionnel. Dans le MBS réel, avec le clavier braille physique.',
+                titleLetters:'Leçon 1 — Premières lettres', titleWord:'Leçon 2 — Premier mot',
+                press:'Appuyez sur la lettre', correct:'Correct', wrong:(c)=>`Vous avez appuyé sur « ${c} ». Réessayez.`,
+                wrongVoice:'Ce n’est pas correct. Réessayez.', completed:'Leçon terminée',
+                result:(h,e)=>`Très bien ! ${h} réussites et ${e} erreurs.`,
+                resultVoice:(h,e)=>`Leçon terminée. ${h} réussites et ${e} erreurs.`, of:'sur'
+            },
+            'en-US': {
+                toggle:'Lessons', mode:'🎓 LESSON MODE', subtitle:'Pedagogical proof of concept',
+                close:'Close lessons panel', l1:'Lesson 1', l1d:'First letters: a–f',
+                l2:'Lesson 2', l2d:'First word: HOUSE', generic:'Lesson', pressKey:'Press a key',
+                hits:'Correct', errors:'Errors', exit:'Exit lesson',
+                note:'In the demo, responses use a conventional keyboard. In the real MBS, they use the physical braille keyboard.',
+                titleLetters:'Lesson 1 — First letters', titleWord:'Lesson 2 — First word',
+                press:'Press the letter', correct:'Correct', wrong:(c)=>`You pressed “${c}”. Try again.`,
+                wrongVoice:'That is not correct. Try again.', completed:'Lesson completed',
+                result:(h,e)=>`Well done! ${h} correct and ${e} errors.`,
+                resultVoice:(h,e)=>`Lesson completed. ${h} correct and ${e} errors.`, of:'of'
+            }
+        };
+        return all[this.idiomaActual] || all['es-AR'];
+    },
+
+    _applyLessonLanguage: function() {
+        const L = this._lessonStrings();
+        const set = (id, text) => { const el=document.getElementById(id); if(el) el.textContent=text; };
+        set('lessonToggleText', L.toggle); set('lessonModeLabel', L.mode); set('lessonSubtitle', L.subtitle);
+        set('lesson1Title', L.l1); set('lesson1Desc', L.l1d); set('lesson2Title', L.l2); set('lesson2Desc', L.l2d);
+        set('lessonHitsLabel', L.hits); set('lessonErrorsLabel', L.errors); set('lessonExitBtn', L.exit); set('lessonNote', L.note);
+        const sidebar=document.getElementById('lessonSidebar'); if(sidebar) sidebar.setAttribute('aria-label', L.toggle);
+        const close=document.getElementById('lessonCloseBtn'); if(close) close.setAttribute('aria-label', L.close);
+        if (this.lessonActive && this.lesson) {
+            const title=document.getElementById('lessonTitle');
+            if(title) title.textContent=this.lesson.type==='letters'?L.titleLetters:L.titleWord;
+            this._renderLesson();
+        } else {
+            set('lessonTitle', L.generic); set('lessonInstruction', L.pressKey);
+        }
+    },
+
+    toggleLessonSidebar: function(forceOpen) {
+        const sidebar = document.getElementById('lessonSidebar');
+        const toggle = document.getElementById('lessonSidebarToggle');
+        const backdrop = document.getElementById('lessonSidebarBackdrop');
+        if (!sidebar) return;
+        const shouldOpen = typeof forceOpen === 'boolean' ? forceOpen : !sidebar.classList.contains('open');
+        sidebar.classList.toggle('open', shouldOpen);
+        document.body.classList.toggle('lesson-sidebar-open', shouldOpen);
+        const mobilePanel = window.matchMedia('(max-width: 900px)').matches;
+        if (backdrop) backdrop.classList.toggle('open', shouldOpen && mobilePanel);
+        sidebar.setAttribute('aria-hidden', shouldOpen ? 'false' : 'true');
+        if (toggle) toggle.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+    },
+
+    startLesson: function(type) {
+        this.toggleLessonSidebar(true);
+        const wordLessons = {
+            'es-AR': { sequence:['c','a','s','a'], word:'CASA' },
+            'pt-BR': { sequence:['l','a','r'], word:'LAR' },
+            'en-US': { sequence:['h','o','u','s','e'], word:'HOUSE' },
+            'fr-FR': { sequence:['m','a','i','s','o','n'], word:'MAISON' }
+        };
+        const wordLesson = wordLessons[this.idiomaActual] || wordLessons['es-AR'];
+        const lessons = {
+            letters: { type:'letters', sequence: ['a','b','c','d','e','f'] },
+            word:    { type:'word', sequence: wordLesson.sequence, word: wordLesson.word }
+        };
+        const lesson = lessons[type]; if (!lesson) return;
+        const L=this._lessonStrings();
+        clearInterval(this._demoTimer); window.speechSynthesis.cancel();
+        this.lessonActive=true; this.lesson=lesson; this.lessonIndex=0; this.lessonHits=0; this.lessonErrors=0;
+        if (document.activeElement && typeof document.activeElement.blur === 'function') document.activeElement.blur();
+        const chooser=document.getElementById('lessonChooser'), panel=document.getElementById('lessonPanel');
+        if(chooser) chooser.hidden=true; if(panel) panel.hidden=false;
+        const title=document.getElementById('lessonTitle'); if(title) title.textContent=type==='letters'?L.titleLetters:L.titleWord;
+        this._renderLesson(); this._speakLessonInstruction();
+    },
+
+    _renderLesson: function() {
+        const L=this._lessonStrings();
+        const expected=this.lesson.sequence[this.lessonIndex];
+        const instruction=document.getElementById('lessonInstruction'), progress=document.getElementById('lessonProgress');
+        const feedback=document.getElementById('lessonFeedback'), hits=document.getElementById('lessonHits'), errors=document.getElementById('lessonErrors');
+        if(instruction) instruction.innerHTML=`${L.press} <strong>“${expected.toUpperCase()}”</strong>`;
+        if(this.lesson.word) { const chars=this.lesson.sequence.map((ch,i)=>i<this.lessonIndex?ch.toUpperCase():'—'); if(progress) progress.textContent=chars.join(' '); }
+        else if(progress) progress.textContent=`${this.lessonIndex+1} ${L.of} ${this.lesson.sequence.length}`;
+        if(feedback){feedback.textContent='';feedback.className='lesson-feedback';}
+        if(hits) hits.textContent=this.lessonHits; if(errors) errors.textContent=this.lessonErrors;
+    },
+
+    _speakLessonText: function(text) {
+        if (!this.modoVoz || !text) return;
+        this._speakText(text, { cancel: true });
+    },
+
+    _speakLessonInstruction: function() {
+        if(!this.modoVoz||!this.lessonActive)return;
+        const L=this._lessonStrings(), expected=this.lesson.sequence[this.lessonIndex];
+        this._speakLessonText(`${L.press} ${expected}`);
+    },
+
+    handleLessonKey: function(key) {
+        if(!this.lessonActive)return;
+        const L=this._lessonStrings(), typed=key.toLowerCase(), expected=this.lesson.sequence[this.lessonIndex].toLowerCase();
+        this._demoEmitChar(typed); const feedback=document.getElementById('lessonFeedback');
+        if(typed===expected){
+            this.lessonHits++; if(feedback){feedback.textContent=`✓ ${L.correct}`;feedback.className='lesson-feedback ok';}
+            this.lessonIndex++;
+            if(this.lessonIndex>=this.lesson.sequence.length)setTimeout(()=>this._finishLesson(),450);
+            else setTimeout(()=>{this._renderLesson();this._speakLessonInstruction();},600);
+        } else {
+            this.lessonErrors++; if(feedback){feedback.textContent=`✗ ${L.wrong(typed.toUpperCase())}`;feedback.className='lesson-feedback error';}
+            const errors=document.getElementById('lessonErrors'); if(errors)errors.textContent=this.lessonErrors;
+            if(this.modoVoz) this._speakLessonText(L.wrongVoice);
+        }
+    },
+
+    _finishLesson: function() {
+        const L=this._lessonStrings();
+        const instruction=document.getElementById('lessonInstruction'), progress=document.getElementById('lessonProgress');
+        const feedback=document.getElementById('lessonFeedback'), hits=document.getElementById('lessonHits');
+        if(instruction)instruction.textContent=L.completed;
+        if(progress)progress.textContent=this.lesson.word||'a · b · c · d · e · f';
+        if(feedback){feedback.textContent=L.result(this.lessonHits,this.lessonErrors);feedback.className='lesson-feedback ok';}
+        if(hits)hits.textContent=this.lessonHits;
+        if(this.modoVoz) this._speakLessonText(L.resultVoice(this.lessonHits,this.lessonErrors));
+        this.lessonActive=false;
+    },
+
+    stopLesson: function() {
+        this.lessonActive=false; window.speechSynthesis.cancel();
+        const chooser=document.getElementById('lessonChooser'), panel=document.getElementById('lessonPanel');
+        if(chooser)chooser.hidden=false; if(panel)panel.hidden=true;
+        this._applyLessonLanguage();
+    },
+
     clear: function() {
-        this._tts('tts_limpiar');
+        // Limpiar debe ser una acción silenciosa: no se antepone al próximo texto TTS.
+        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
         if (this.buffer) this.buffer.value = "";
         this.palabraActual = "";
         // Reseteo completo de todas las métricas
@@ -1091,3 +1632,5 @@ const APP = {
 };
 
 window.onload = () => APP.init();
+
+// VERSION MBS MULTILINGUE FR + TTS TRANSITION FIX 20260831-V3
