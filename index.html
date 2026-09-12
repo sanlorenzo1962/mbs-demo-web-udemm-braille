@@ -5,7 +5,7 @@
   <title>MBS (Multilingual Braille System)</title>
  <!--<link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"> -->
-  <link rel="stylesheet" href="styles.css?v=20260831-2000">
+  <link rel="stylesheet" href="styles.css?v=20260912-braille-v1">
 </head>
 <body>
 
@@ -152,6 +152,13 @@
           <textarea id="buffer" readonly placeholder="Esperando entrada del teclado Braille..."></textarea>
         </div>
 
+        <!-- REPRESENTACIÓN BRAILLE UNICODE -->
+        <div class="braille-text-card">
+          <div class="panel-label"><span id="lbl_braille_texto">TEXTO BRAILLE</span></div>
+          <div id="brailleBuffer" class="braille-text-output" aria-live="polite"
+               aria-label="Representación Braille del texto generado"></div>
+        </div>
+
         <!-- ACCIONES -->
         <div class="actions-card">
           <div class="panel-label"><span id="lbl_sesion">SESIÓN Y ACCIONES</span></div>
@@ -292,6 +299,6 @@
   </div>
 </div>
 
-<script src="app.js?v=20260831-2000"></script>
+<script src="app.js?v=20260912-braille-v1"></script>
 </body>
 </html>

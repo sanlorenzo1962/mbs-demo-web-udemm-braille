@@ -210,7 +210,7 @@ body {
 
 /* ===== CARDS GENÉRICAS ===== */
 .braille-card, .metrics-card, .speed-card,
-.lang-card, .buffer-card, .actions-card {
+.lang-card, .buffer-card, .braille-text-card, .actions-card {
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -218,7 +218,7 @@ body {
   margin-bottom: 14px;
 }
 .braille-card:last-child, .metrics-card:last-child, .speed-card:last-child,
-.lang-card:last-child, .buffer-card:last-child, .actions-card:last-child {
+.lang-card:last-child, .buffer-card:last-child, .braille-text-card:last-child, .actions-card:last-child {
   margin-bottom: 0;
 }
 .left-panel, .right-panel {
@@ -770,3 +770,32 @@ button:hover { border-color: var(--border-bright); color: var(--text-primary); }
 }
 
 /* VERSION GITHUB FINAL 20260806-1130 */
+
+
+/* ===== TEXTO BRAILLE UNICODE ===== */
+.braille-text-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 18px;
+  margin-bottom: 14px;
+}
+.braille-text-output {
+  width: 100%;
+  min-height: 92px;
+  max-height: 180px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 14px;
+  background: var(--bg-input);
+  color: var(--accent-green);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", sans-serif;
+  font-size: 2.15rem;
+  line-height: 1.45;
+  letter-spacing: 0.08em;
+}
+
+/* VERSION DEMO BRAILLE V1 20260912 */

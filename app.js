@@ -95,6 +95,7 @@ const APP = {
             document.getElementById('d4'), document.getElementById('d5'), document.getElementById('d6')
         ];
         this.buffer  = document.getElementById('buffer');
+        this.brailleBuffer = document.getElementById('brailleBuffer');
         this.bigChar = document.getElementById('bigChar');
         this.maskHex = document.getElementById('maskHex');
         // MBS 2026-08-07: cargar voces y restaurar el texto de prueba.
@@ -861,7 +862,7 @@ const APP = {
         'es-AR': {
             lbl_celda:'CELDA BRAILLE', lbl_metricas:'MÉTRICAS EN TIEMPO REAL',
             lbl_velocidad:'VELOCIDAD MÁXIMA', lbl_idioma:'IDIOMA',
-            lbl_texto:'TEXTO GENERADO', lbl_sesion:'SESIÓN Y ACCIONES',
+            lbl_texto:'TEXTO GENERADO', lbl_braille_texto:'TEXTO BRAILLE', lbl_sesion:'SESIÓN Y ACCIONES',
             lbl_placeholder:'Esperando entrada del teclado Braille...',
             lbl_wpm:'WPM', lbl_chars:'CARACTERES', lbl_words:'PALABRAS', lbl_ms:'ms/TECLA',
             lbl_wpmbar:'Velocidad relativa (max 60 WPM)',
@@ -890,7 +891,7 @@ const APP = {
         'pt-BR': {
             lbl_celda:'CÉLULA BRAILLE', lbl_metricas:'MÉTRICAS EM TEMPO REAL',
             lbl_velocidad:'VELOCIDADE MÁXIMA', lbl_idioma:'IDIOMA',
-            lbl_texto:'TEXTO GERADO', lbl_sesion:'SESSÃO E AÇÕES',
+            lbl_texto:'TEXTO GERADO', lbl_braille_texto:'TEXTO BRAILLE', lbl_sesion:'SESSÃO E AÇÕES',
             lbl_placeholder:'Aguardando entrada do teclado Braille...',
             lbl_wpm:'PPM', lbl_chars:'CARACTERES', lbl_words:'PALAVRAS', lbl_ms:'ms/TECLA',
             lbl_wpmbar:'Velocidade relativa (máx 60 PPM)',
@@ -919,7 +920,7 @@ const APP = {
         'fr-FR': {
             lbl_celda:'CELLULE BRAILLE', lbl_metricas:'MÉTRIQUES EN TEMPS RÉEL',
             lbl_velocidad:'VITESSE MAXIMALE', lbl_idioma:'LANGUE',
-            lbl_texto:'TEXTE GÉNÉRÉ', lbl_sesion:'SESSION ET ACTIONS',
+            lbl_texto:'TEXTE GÉNÉRÉ', lbl_braille_texto:'TEXTE BRAILLE', lbl_sesion:'SESSION ET ACTIONS',
             lbl_placeholder:'En attente de saisie au clavier braille...',
             lbl_wpm:'MPM', lbl_chars:'CARACTÈRES', lbl_words:'MOTS', lbl_ms:'ms/TOUCHE',
             lbl_wpmbar:'Vitesse relative (max. 60 MPM)',
@@ -947,7 +948,7 @@ const APP = {
         'en-US': {
             lbl_celda:'BRAILLE CELL', lbl_metricas:'REAL-TIME METRICS',
             lbl_velocidad:'MAX SPEED', lbl_idioma:'LANGUAGE',
-            lbl_texto:'GENERATED TEXT', lbl_sesion:'SESSION & ACTIONS',
+            lbl_texto:'GENERATED TEXT', lbl_braille_texto:'BRAILLE TEXT', lbl_sesion:'SESSION & ACTIONS',
             lbl_placeholder:'Waiting for Braille keyboard input...',
             lbl_wpm:'WPM', lbl_chars:'CHARACTERS', lbl_words:'WORDS', lbl_ms:'ms/KEY',
             lbl_wpmbar:'Relative speed (max 60 WPM)',
@@ -998,6 +999,7 @@ const APP = {
         set('lbl_velocidad', T.lbl_velocidad);
         set('lbl_idioma', T.lbl_idioma);
         set('lbl_texto', T.lbl_texto);
+        set('lbl_braille_texto', T.lbl_braille_texto);
         set('lbl_sesion', T.lbl_sesion);
         ph ('buffer', T.lbl_placeholder);
 
@@ -1320,6 +1322,36 @@ const APP = {
         return 0;
     },
 
+    // Convierte directamente la máscara de 6 puntos al bloque Unicode Braille.
+    // Unicode Braille usa la misma correspondencia binaria para los puntos 1..6:
+    // U+2800 + máscara.
+    _brailleDesdeMask: function(mask) {
+        return String.fromCodePoint(0x2800 + (mask & 0x3F));
+    },
+
+    _appendBrailleDemo: function(ch, mask) {
+        if (!this.brailleBuffer) return;
+
+        if (ch === "\n") {
+            this.brailleBuffer.textContent += "\n";
+            return;
+        }
+        if (ch === " ") {
+            this.brailleBuffer.textContent += " ";
+            return;
+        }
+
+        // Fase 1: representación directa de la celda correspondiente al carácter.
+        // Mayúsculas y prefijo numérico se validarán en la fase siguiente.
+        if (mask) {
+            this.brailleBuffer.textContent += this._brailleDesdeMask(mask);
+        } else {
+            this.brailleBuffer.textContent += "□";
+        }
+
+        this.brailleBuffer.scrollTop = this.brailleBuffer.scrollHeight;
+    },
+
     _registrarDemoChar: function(charFinal, mask, msDif) {
         const ahora = performance.now();
         if (this.sesionActiva) {
@@ -1351,6 +1383,7 @@ const APP = {
             this.buffer.value += ch;
             this.buffer.scrollTop = this.buffer.scrollHeight;
         }
+        this._appendBrailleDemo(ch, mask);
 
         this._registrarDemoChar(ch, mask, msDif);
         this._beep('ok');
@@ -1392,6 +1425,7 @@ const APP = {
 
         clearInterval(this._demoTimer);
         if (this.buffer) this.buffer.value = '';
+        if (this.brailleBuffer) this.brailleBuffer.textContent = '';
         this.palabraActual = '';
         this.t_ultima_tecla = 0;
         const textoConCierre = /[\s\n]$/.test(txt) ? txt : txt + ' ';
@@ -1407,6 +1441,9 @@ const APP = {
 
     if (this.buffer) {
         this.buffer.value = "INICIANDO DEMOSTRACIÓN...\n";
+    }
+    if (this.brailleBuffer) {
+        this.brailleBuffer.textContent = "";
     }
 
     let dot = 1;
@@ -1610,6 +1647,7 @@ const APP = {
         // Limpiar debe ser una acción silenciosa: no se antepone al próximo texto TTS.
         if ('speechSynthesis' in window) window.speechSynthesis.cancel();
         if (this.buffer) this.buffer.value = "";
+        if (this.brailleBuffer) this.brailleBuffer.textContent = "";
         this.palabraActual = "";
         // Reseteo completo de todas las métricas
         this._tPrimeraTecla  = 0;
