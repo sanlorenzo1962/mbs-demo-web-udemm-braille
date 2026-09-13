@@ -879,7 +879,6 @@ button:hover { border-color: var(--border-bright); color: var(--text-primary); }
   font-size: 3rem;
   line-height: 1.22;
   letter-spacing: 0.015em;
-  word-spacing: 0.35em;
 
   text-rendering: geometricPrecision;
   font-variant-ligatures: none;
@@ -896,7 +895,6 @@ button:hover { border-color: var(--border-bright); color: var(--text-primary); }
     max-height: 180px;
     padding: 14px;
     letter-spacing: 0;
-    word-spacing: 0.22em;
   }
 }
 
@@ -905,5 +903,3 @@ button:hover { border-color: var(--border-bright); color: var(--text-primary); }
 /* VERSION DEMO BRAILLE V4 ANCHO 20260913 */
 
 /* VERSION DEMO BRAILLE V5 IDIOMAS VERTICALES 20260913 */
-
-/* VERSION DEMO BRAILLE V6 ESPACIO ENTRE PALABRAS 20260913 */

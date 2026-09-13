@@ -1343,7 +1343,10 @@ const APP = {
             return;
         }
         if (ch === " ") {
-            this.brailleBuffer.textContent += " ";
+            // En Braille, la separación entre palabras se representa con una celda vacía.
+            // Para la DEMO agregamos además una pequeña separación visual extra,
+            // sin alterar el texto generado ni la lógica del MBS real.
+            this.brailleBuffer.textContent += "\u2800\u2003";
             return;
         }
 
@@ -1749,4 +1752,4 @@ const APP = {
 
 window.onload = () => APP.init();
 
-// VERSION MBS DEMO BRAILLE V2 - PREFIJOS ^/# + RESET POR ESPACIO 20260912
+// VERSION MBS DEMO BRAILLE V7 - SEPARACION VISUAL DE PALABRAS 20260913
