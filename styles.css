@@ -124,7 +124,7 @@ body {
 }
 
 /* ===== LAYOUT ===== */
-.layout { width: 100%; max-width: 1280px; }
+.layout { width: 100%; max-width: 1440px; }
 
 .card {
   background: var(--bg-card);
@@ -568,12 +568,71 @@ button:hover { border-color: var(--border-bright); color: var(--text-primary); }
 .card { animation: fadeInUp 0.5s ease; }
 
 
+
+/* ===== V5: IDIOMAS EN COLUMNA LATERAL (ESCRITORIO) =====
+   La tarjeta de idiomas sale del flujo normal sólo en pantallas grandes.
+   Así el panel derecho gana altura sin cambiar HTML ni app.js.
+*/
+@media (min-width: 1181px) {
+  .main-panel {
+    position: relative;
+    padding-right: 166px; /* reserva la franja lateral */
+  }
+
+  .lang-card {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 144px;
+    margin-bottom: 0;
+    padding: 14px 12px;
+  }
+
+  .lang-card .panel-label {
+    margin-bottom: 10px;
+  }
+
+  .lang-btns {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .lang-btn {
+    flex: 0 0 auto;
+    width: 100%;
+    min-height: 48px;
+    padding: 10px 8px;
+    font-size: 0.72rem;
+    letter-spacing: 0.045em;
+  }
+
+  .lang-flag {
+    font-size: 1rem;
+  }
+}
+
 /* ===== AJUSTE DE ANCHO PARA ESCRITORIO ===== */
 @media (max-width: 1180px) and (min-width: 721px) {
   .layout { max-width: 1080px; }
   .main-panel {
     grid-template-columns: 330px 1fr;
     gap: 18px;
+    padding-right: 0;
+  }
+  .lang-card {
+    position: static;
+    width: auto;
+    margin-bottom: 14px;
+  }
+  .lang-btns {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .lang-btn {
+    flex: 1 1 120px;
+    width: auto;
+    min-height: 0;
   }
 }
 
@@ -842,3 +901,5 @@ button:hover { border-color: var(--border-bright); color: var(--text-primary); }
 /* VERSION DEMO BRAILLE V3 VISUAL 20260912 */
 
 /* VERSION DEMO BRAILLE V4 ANCHO 20260913 */
+
+/* VERSION DEMO BRAILLE V5 IDIOMAS VERTICALES 20260913 */
