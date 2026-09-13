@@ -124,7 +124,7 @@ body {
 }
 
 /* ===== LAYOUT ===== */
-.layout { width: 100%; max-width: 1020px; }
+.layout { width: 100%; max-width: 1280px; }
 
 .card {
   background: var(--bg-card);
@@ -191,8 +191,8 @@ body {
 /* ===== MAIN PANEL (dos columnas) ===== */
 .main-panel {
   display: grid;
-  grid-template-columns: 320px 1fr;
-  gap: 18px;
+  grid-template-columns: 360px 1fr;
+  gap: 22px;
 }
 
 /* ===== PANEL LABEL ===== */
@@ -567,6 +567,16 @@ button:hover { border-color: var(--border-bright); color: var(--text-primary); }
 
 .card { animation: fadeInUp 0.5s ease; }
 
+
+/* ===== AJUSTE DE ANCHO PARA ESCRITORIO ===== */
+@media (max-width: 1180px) and (min-width: 721px) {
+  .layout { max-width: 1080px; }
+  .main-panel {
+    grid-template-columns: 330px 1fr;
+    gap: 18px;
+  }
+}
+
 /* ===== RESPONSIVE ===== */
 @media (max-width: 720px) {
   .main-panel { grid-template-columns: 1fr; }
@@ -830,3 +840,5 @@ button:hover { border-color: var(--border-bright); color: var(--text-primary); }
 }
 
 /* VERSION DEMO BRAILLE V3 VISUAL 20260912 */
+
+/* VERSION DEMO BRAILLE V4 ANCHO 20260913 */
