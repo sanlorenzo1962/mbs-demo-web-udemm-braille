@@ -5,7 +5,7 @@
   <title>MBS (Multilingual Braille System)</title>
  <!--<link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"> -->
-  <link rel="stylesheet" href="styles.css?v=20260913-v5">
+  <link rel="stylesheet" href="styles.css?v=20260925-speed-buttons-v1">
 </head>
 <body>
 
@@ -112,12 +112,39 @@
 
         <!-- VELOCIDAD -->
         <div class="speed-card">
-          <div class="panel-label"><span id="lbl_velocidad">VELOCIDAD MÁXIMA</span></div>
+          <div class="panel-label">
+            <label id="lbl_velocidad" for="speedSlider">VELOCIDAD MÁXIMA</label>
+          </div>
           <div class="speed-inner">
-            <div class="speed-num"><span id="speedValue">1</span><span class="speed-unit">WPM</span></div>
-            <input type="range" id="speedSlider" min="1" max="60" value="1" oninput="APP.updateSpeed(this.value)">
+            <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:10px;">
+              <button id="btnSpeedDown" type="button"
+                      aria-label="Disminuir velocidad"
+                      onclick="APP.adjustSpeed(-1)"
+                      style="width:44px;height:38px;border:1px solid #2d8cf0;border-radius:7px;background:#0b1119;color:#7db8ff;font:700 22px Arial,sans-serif;cursor:pointer;">−</button>
+
+              <div class="speed-num" aria-live="polite" aria-atomic="true">
+                <span id="speedValue">1</span><span class="speed-unit">WPM</span>
+              </div>
+
+              <button id="btnSpeedUp" type="button"
+                      aria-label="Aumentar velocidad"
+                      onclick="APP.adjustSpeed(1)"
+                      style="width:44px;height:38px;border:1px solid #2d8cf0;border-radius:7px;background:#0b1119;color:#7db8ff;font:700 22px Arial,sans-serif;cursor:pointer;">+</button>
+            </div>
+
+            <input
+              type="range"
+              id="speedSlider"
+              min="1"
+              max="60"
+              step="1"
+              value="1"
+              tabindex="-1"
+              aria-hidden="true"
+              oninput="APP.updateSpeed(this.value)">
+
             <div class="speed-ticks">
-              <span>5</span><span>25</span><span>50</span><span>75</span><span>100</span>
+              <span>1</span><span>15</span><span>30</span><span>45</span><span>60</span>
             </div>
           </div>
         </div>
@@ -299,6 +326,6 @@
   </div>
 </div>
 
-<script src="app.js?v=20260912-braille-v2"></script>
+<script src="app.js?v=20260925-speed-buttons-v1"></script>
 </body>
 </html>

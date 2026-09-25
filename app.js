@@ -734,17 +734,35 @@ const APP = {
         }
     },
 
+    adjustSpeed: function(delta) {
+        const slider = document.getElementById('speedSlider');
+        const display = document.getElementById('speedValue');
+        const actual = slider ? parseInt(slider.value, 10) : parseInt(display?.textContent || '1', 10);
+        const nuevo = Math.max(1, Math.min(60, (Number.isFinite(actual) ? actual : 1) + delta));
+        this.updateSpeed(nuevo);
+    },
+
     updateSpeed: function(val) {
+        const n = Math.max(1, Math.min(60, parseInt(val, 10) || 1));
         const el = document.getElementById('speedValue');
-        if (el) el.innerText = val;
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send("SPD_" + val);
-        // Anunciar velocidad (con debounce para no spamear mientras se arrastra)
+        const slider = document.getElementById('speedSlider');
+
+        if (el) el.innerText = n;
+        if (slider && parseInt(slider.value, 10) !== n) slider.value = n;
+
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send("SPD_" + n);
+
+        // Anunciar velocidad (con debounce para no spamear mientras se ajusta)
         clearTimeout(this._speedTtsTimer);
         this._speedTtsTimer = setTimeout(() => {
             if (!this.modoVoz) return;
             const T = this.I18N[this.idiomaActual] || this.I18N['es-AR'];
-            this._speakText(`${T.tts_velocidad} ${val}`, { cancel: true });
-        }, 600);
+            const unidad = (this.idiomaActual === 'pt-BR') ? 'palavras por minuto'
+                         : (this.idiomaActual === 'en-US') ? 'words per minute'
+                         : (this.idiomaActual === 'fr-FR') ? 'mots par minute'
+                         : (n === 1 ? 'palabra por minuto' : 'palabras por minuto');
+            this._speakText(`${T.tts_velocidad} ${n} ${unidad}`, { cancel: true });
+        }, 350);
     },
 
     // ===== TTS MULTILINGÜE CENTRALIZADO (2026-08-07) =====
@@ -885,6 +903,7 @@ const APP = {
             tts_sonido_on:'Sonido activado', tts_sonido_off:'Sonido desactivado',
             tts_limpiar:'Limpiar', tts_csv:'Exportar C S V', tts_txt:'Exportar texto',
             tts_velocidad:'Velocidad',
+            btn_speed_down:'Disminuir velocidad', btn_speed_up:'Aumentar velocidad',
             tts_listo:'Sistema listo', tts_idioma:'Español',
             btn_click_on:'Click: ON', btn_click_off:'Click: OFF',
             tts_click_on:'Click activado', tts_click_off:'Click desactivado',
@@ -915,6 +934,7 @@ const APP = {
             tts_sonido_on:'Som ativado', tts_sonido_off:'Som desativado',
             tts_limpiar:'Limpar', tts_csv:'Exportar C S V', tts_txt:'Exportar texto',
             tts_velocidad:'Velocidade',
+            btn_speed_down:'Diminuir velocidade', btn_speed_up:'Aumentar velocidade',
             btn_click_on:'Click: ON', btn_click_off:'Click: OFF',
             tts_click_on:'Click ativado', tts_click_off:'Click desativado',
 			tts_comilla: "Aspas",
@@ -944,6 +964,7 @@ const APP = {
             tts_sonido_on:'Son activé', tts_sonido_off:'Son désactivé',
             tts_limpiar:'Effacer', tts_csv:'Exporter C S V', tts_txt:'Exporter le texte',
             tts_velocidad:'Vitesse',
+            btn_speed_down:'Diminuer la vitesse', btn_speed_up:'Augmenter la vitesse',
             btn_click_on:'Clic : ON', btn_click_off:'Clic : OFF',
             tts_click_on:'Clic activé', tts_click_off:'Clic désactivé',
             tts_comilla:'Guillemet', tts_apostrofe:'Apostrophe',
@@ -972,6 +993,7 @@ const APP = {
             tts_sonido_on:'Sound on', tts_sonido_off:'Sound off',
             tts_limpiar:'Clear', tts_csv:'Export C S V', tts_txt:'Export text',
             tts_velocidad:'Speed',
+            btn_speed_down:'Decrease speed', btn_speed_up:'Increase speed',
             btn_click_on:'Click: ON', btn_click_off:'Click: OFF',
             tts_click_on:'Click on', tts_click_off:'Click off',
             tts_comilla:'Quote', tts_apostrofe:'Apostrophe',
@@ -1014,6 +1036,11 @@ const APP = {
         set('lbl_words', T.lbl_words);
         set('lbl_ms', T.lbl_ms);
         set('lbl_wpmbar', T.lbl_wpmbar);
+
+        const btnSpeedDown = document.getElementById('btnSpeedDown');
+        const btnSpeedUp   = document.getElementById('btnSpeedUp');
+        if (btnSpeedDown) btnSpeedDown.setAttribute('aria-label', T.btn_speed_down || 'Disminuir velocidad');
+        if (btnSpeedUp)   btnSpeedUp.setAttribute('aria-label', T.btn_speed_up || 'Aumentar velocidad');
 
         const btnSesion = document.getElementById('btnSesion');
         if (btnSesion) btnSesion.innerHTML = this.sesionActiva
