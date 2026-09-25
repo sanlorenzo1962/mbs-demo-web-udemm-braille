@@ -454,6 +454,53 @@ const APP = {
         }
     },
 
+
+    // ── Feedback sonoro pedagógico para lecciones ─────────────────────
+    // Sintetizado con Web Audio API: no requiere MP3/WAV ni Internet.
+    // "melodia_1": tres notas ascendentes suaves para respuesta correcta.
+    // "error_1": dos notas descendentes graves, claras pero no agresivas.
+    _lessonFeedbackTone: function(tipo = 'melodia_1') {
+        this._initAudio();
+        const ctx = this.audioCtx;
+        if (!ctx) return;
+
+        // Algunos navegadores dejan AudioContext suspendido hasta una interacción.
+        if (ctx.state === 'suspended' && typeof ctx.resume === 'function') {
+            ctx.resume().catch(() => {});
+        }
+
+        const presets = {
+            melodia_1: [
+                { freq: 523.25, start: 0.00, dur: 0.11, gain: 0.18 }, // Do5
+                { freq: 659.25, start: 0.12, dur: 0.11, gain: 0.18 }, // Mi5
+                { freq: 783.99, start: 0.24, dur: 0.16, gain: 0.20 }  // Sol5
+            ],
+            error_1: [
+                { freq: 329.63, start: 0.00, dur: 0.15, gain: 0.17 }, // Mi4
+                { freq: 220.00, start: 0.16, dur: 0.22, gain: 0.19 }  // La3
+            ]
+        };
+
+        const seq = presets[tipo] || presets.melodia_1;
+        const now = ctx.currentTime;
+
+        seq.forEach(n => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(n.freq, now + n.start);
+
+            gain.gain.setValueAtTime(0.001, now + n.start);
+            gain.gain.exponentialRampToValueAtTime(n.gain, now + n.start + 0.015);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + n.start + n.dur);
+
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now + n.start);
+            osc.stop(now + n.start + n.dur + 0.02);
+        });
+    },
+
     _actualizarMetricas: function(intervaloMs) {
         const ahora = performance.now();
         const texto = this.buffer ? this.buffer.value : "";
@@ -1716,15 +1763,35 @@ const APP = {
         if(!this.lessonActive)return;
         const L=this._lessonStrings(), typed=key.toLowerCase(), expected=this.lesson.sequence[this.lessonIndex].toLowerCase();
         this._demoEmitChar(typed); const feedback=document.getElementById('lessonFeedback');
+
         if(typed===expected){
-            this.lessonHits++; if(feedback){feedback.textContent=`✓ ${L.correct}`;feedback.className='lesson-feedback ok';}
+            // Acierto: melodía breve ascendente antes de pedir el siguiente carácter.
+            this._lessonFeedbackTone('melodia_1');
+            this.lessonHits++;
+            if(feedback){feedback.textContent=`✓ ${L.correct}`;feedback.className='lesson-feedback ok';}
             this.lessonIndex++;
-            if(this.lessonIndex>=this.lesson.sequence.length)setTimeout(()=>this._finishLesson(),450);
-            else setTimeout(()=>{this._renderLesson();this._speakLessonInstruction();},600);
+
+            // Dejamos terminar la melodía para no superponerla con la siguiente consigna.
+            if(this.lessonIndex>=this.lesson.sequence.length) {
+                setTimeout(()=>this._finishLesson(),650);
+            } else {
+                setTimeout(()=>{
+                    this._renderLesson();
+                    this._speakLessonInstruction();
+                },650);
+            }
         } else {
-            this.lessonErrors++; if(feedback){feedback.textContent=`✗ ${L.wrong(typed.toUpperCase())}`;feedback.className='lesson-feedback error';}
+            // Error: tono descendente breve; la devolución hablada entra después.
+            this._lessonFeedbackTone('error_1');
+            this.lessonErrors++;
+            if(feedback){feedback.textContent=`✗ ${L.wrong(typed.toUpperCase())}`;feedback.className='lesson-feedback error';}
             const errors=document.getElementById('lessonErrors'); if(errors)errors.textContent=this.lessonErrors;
-            if(this.modoVoz) this._speakLessonText(L.wrongVoice);
+
+            if(this.modoVoz) {
+                setTimeout(()=>{
+                    if(this.lessonActive) this._speakLessonText(L.wrongVoice);
+                },420);
+            }
         }
     },
 
@@ -1779,4 +1846,4 @@ const APP = {
 
 window.onload = () => APP.init();
 
-// VERSION MBS DEMO BRAILLE V7 - SEPARACION VISUAL DE PALABRAS 20260913
+// VERSION MBS DEMO BRAILLE V9 - FEEDBACK SONORO LECCIONES 20260925
