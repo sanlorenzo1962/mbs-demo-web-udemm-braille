@@ -800,7 +800,7 @@ button:hover { border-color: var(--border-bright); color: var(--text-primary); }
 .lesson-panel { border: 1px solid var(--border-bright); border-radius: var(--radius-sm); padding: 18px; text-align: center; background: rgba(0,0,0,.12); }
 .lesson-title { color: var(--accent-cyan); font-weight: 700; margin-bottom: 12px; }
 .lesson-instruction { font-size: 1.15rem; margin-bottom: 12px; }
-.lesson-instruction strong { color: var(--accent-yellow); font-size: 1.4rem; }
+.lesson-target { font-size: 2rem; font-weight: 800; color: var(--accent-cyan); min-height: 2.6rem; margin: 2px 0 12px; }
 .lesson-progress { font-family: monospace; font-size: 1.4rem; letter-spacing: .18em; min-height: 34px; margin-bottom: 8px; }
 .lesson-feedback { min-height: 40px; font-weight: 700; margin: 8px 0; }
 .lesson-feedback.ok { color: var(--accent-green); }

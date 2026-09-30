@@ -1636,7 +1636,7 @@ const APP = {
                 hits:'Aciertos', errors:'Errores', exit:'Salir de la lección',
                 note:'En la demo se responde con el teclado convencional. En el MBS real, mediante el teclado braille físico.',
                 titleLetters:'Lección 1 — Primeras letras', titleWord:'Lección 2 — Primera palabra',
-                press:'Pulsa la letra', correct:'Correcto', wrong:(c)=>`Pulsaste “${c}”. Intenta nuevamente.`,
+                press:'Escriba la letra', prompt:'Letra a escribir:', correct:'Correcto', wrong:(c)=>`Pulsaste “${c}”. Intenta nuevamente.`,
                 wrongVoice:'No es correcto. Intenta nuevamente.', completed:'Lección completada',
                 result:(h,e)=>`¡Muy bien! ${h} aciertos y ${e} errores.`,
                 resultVoice:(h,e)=>`Lección completada. ${h} aciertos y ${e} errores.`, of:'de'
@@ -1648,7 +1648,7 @@ const APP = {
                 hits:'Acertos', errors:'Erros', exit:'Sair da lição',
                 note:'Na demonstração, a resposta é feita com o teclado convencional. No MBS real, com o teclado braille físico.',
                 titleLetters:'Lição 1 — Primeiras letras', titleWord:'Lição 2 — Primeira palavra',
-                press:'Pressione a letra', correct:'Correto', wrong:(c)=>`Você pressionou “${c}”. Tente novamente.`,
+                press:'Digite a letra', prompt:'Letra a digitar:', correct:'Correto', wrong:(c)=>`Você pressionou “${c}”. Tente novamente.`,
                 wrongVoice:'Não está correto. Tente novamente.', completed:'Lição concluída',
                 result:(h,e)=>`Muito bem! ${h} acertos e ${e} erros.`,
                 resultVoice:(h,e)=>`Lição concluída. ${h} acertos e ${e} erros.`, of:'de'
@@ -1660,7 +1660,7 @@ const APP = {
                 hits:'Réussites', errors:'Erreurs', exit:'Quitter la leçon',
                 note:'Dans la démo, la réponse se fait avec le clavier conventionnel. Dans le MBS réel, avec le clavier braille physique.',
                 titleLetters:'Leçon 1 — Premières lettres', titleWord:'Leçon 2 — Premier mot',
-                press:'Appuyez sur la lettre', correct:'Correct', wrong:(c)=>`Vous avez appuyé sur « ${c} ». Réessayez.`,
+                press:'Saisissez la lettre', prompt:'Lettre à saisir :', correct:'Correct', wrong:(c)=>`Vous avez appuyé sur « ${c} ». Réessayez.`,
                 wrongVoice:'Ce n’est pas correct. Réessayez.', completed:'Leçon terminée',
                 result:(h,e)=>`Très bien ! ${h} réussites et ${e} erreurs.`,
                 resultVoice:(h,e)=>`Leçon terminée. ${h} réussites et ${e} erreurs.`, of:'sur'
@@ -1672,7 +1672,7 @@ const APP = {
                 hits:'Correct', errors:'Errors', exit:'Exit lesson',
                 note:'In the demo, responses use a conventional keyboard. In the real MBS, they use the physical braille keyboard.',
                 titleLetters:'Lesson 1 — First letters', titleWord:'Lesson 2 — First word',
-                press:'Press the letter', correct:'Correct', wrong:(c)=>`You pressed “${c}”. Try again.`,
+                press:'Type the letter', prompt:'Letter to type:', correct:'Correct', wrong:(c)=>`You pressed “${c}”. Try again.`,
                 wrongVoice:'That is not correct. Try again.', completed:'Lesson completed',
                 result:(h,e)=>`Well done! ${h} correct and ${e} errors.`,
                 resultVoice:(h,e)=>`Lesson completed. ${h} correct and ${e} errors.`, of:'of'
@@ -1727,13 +1727,17 @@ const APP = {
         };
         const lesson = lessons[type]; if (!lesson) return;
         const L=this._lessonStrings();
-        clearInterval(this._demoTimer); window.speechSynthesis.cancel();
+        clearInterval(this._demoTimer);
+        clearTimeout(this._lessonVoiceTimer);
+        window.speechSynthesis.cancel();
         this.lessonActive=true; this.lesson=lesson; this.lessonIndex=0; this.lessonHits=0; this.lessonErrors=0;
         if (document.activeElement && typeof document.activeElement.blur === 'function') document.activeElement.blur();
         const chooser=document.getElementById('lessonChooser'), panel=document.getElementById('lessonPanel');
         if(chooser) chooser.hidden=true; if(panel) panel.hidden=false;
         const title=document.getElementById('lessonTitle'); if(title) title.textContent=type==='letters'?L.titleLetters:L.titleWord;
-        this._renderLesson(); this._speakLessonInstruction();
+        this._renderLesson();
+        // La primera consigna se anuncia después de abrir el panel.
+        this._lessonVoiceTimer=setTimeout(()=>this._speakLessonInstruction(),260);
     },
 
     _renderLesson: function() {
@@ -1741,9 +1745,11 @@ const APP = {
         const expected=this.lesson.sequence[this.lessonIndex];
         const instruction=document.getElementById('lessonInstruction'), progress=document.getElementById('lessonProgress');
         const feedback=document.getElementById('lessonFeedback'), hits=document.getElementById('lessonHits'), errors=document.getElementById('lessonErrors');
-        if(instruction) instruction.innerHTML=`${L.press} <strong>“${expected.toUpperCase()}”</strong>`;
-        if(this.lesson.word) { const chars=this.lesson.sequence.map((ch,i)=>i<this.lessonIndex?ch.toUpperCase():'—'); if(progress) progress.textContent=chars.join(' '); }
-        else if(progress) progress.textContent=`${this.lessonIndex+1} ${L.of} ${this.lesson.sequence.length}`;
+        if(instruction) instruction.textContent=L.prompt;
+        const target=document.getElementById('lessonTarget');
+        if(target) target.textContent=expected.toLowerCase();
+        // La secuencia visible contiene únicamente las letras ya acertadas.
+        if(progress) progress.textContent=this.lesson.sequence.slice(0,this.lessonIndex).join(' ');
         if(feedback){feedback.textContent='';feedback.className='lesson-feedback';}
         if(hits) hits.textContent=this.lessonHits; if(errors) errors.textContent=this.lessonErrors;
     },
@@ -1756,6 +1762,7 @@ const APP = {
     _speakLessonInstruction: function() {
         if(!this.modoVoz||!this.lessonActive)return;
         const L=this._lessonStrings(), expected=this.lesson.sequence[this.lessonIndex];
+        if(expected===undefined)return;
         this._speakLessonText(`${L.press} ${expected}`);
     },
 
@@ -1771,27 +1778,25 @@ const APP = {
             if(feedback){feedback.textContent=`✓ ${L.correct}`;feedback.className='lesson-feedback ok';}
             this.lessonIndex++;
 
-            // Dejamos terminar la melodía para no superponerla con la siguiente consigna.
+            // Actualizamos inmediatamente la indicación visual. La voz espera al tono.
+            clearTimeout(this._lessonVoiceTimer);
             if(this.lessonIndex>=this.lesson.sequence.length) {
-                setTimeout(()=>this._finishLesson(),650);
+                this._lessonVoiceTimer=setTimeout(()=>this._finishLesson(),650);
             } else {
-                setTimeout(()=>{
-                    this._renderLesson();
-                    this._speakLessonInstruction();
-                },650);
+                this._renderLesson();
+                const index=this.lessonIndex;
+                this._lessonVoiceTimer=setTimeout(()=>{
+                    if(this.lessonActive && this.lessonIndex===index) this._speakLessonInstruction();
+                },480);
             }
         } else {
-            // Error: tono descendente breve; la devolución hablada entra después.
+            // Error: solo tono y mensaje visual. No se cambia ni se repite la consigna.
             this._lessonFeedbackTone('error_1');
             this.lessonErrors++;
             if(feedback){feedback.textContent=`✗ ${L.wrong(typed.toUpperCase())}`;feedback.className='lesson-feedback error';}
             const errors=document.getElementById('lessonErrors'); if(errors)errors.textContent=this.lessonErrors;
 
-            if(this.modoVoz) {
-                setTimeout(()=>{
-                    if(this.lessonActive) this._speakLessonText(L.wrongVoice);
-                },420);
-            }
+
         }
     },
 
@@ -1800,6 +1805,7 @@ const APP = {
         const instruction=document.getElementById('lessonInstruction'), progress=document.getElementById('lessonProgress');
         const feedback=document.getElementById('lessonFeedback'), hits=document.getElementById('lessonHits');
         if(instruction)instruction.textContent=L.completed;
+        const target=document.getElementById('lessonTarget'); if(target)target.textContent='✓';
         if(progress)progress.textContent=this.lesson.word||'a · b · c · d · e · f';
         if(feedback){feedback.textContent=L.result(this.lessonHits,this.lessonErrors);feedback.className='lesson-feedback ok';}
         if(hits)hits.textContent=this.lessonHits;
@@ -1808,7 +1814,9 @@ const APP = {
     },
 
     stopLesson: function() {
-        this.lessonActive=false; window.speechSynthesis.cancel();
+        this.lessonActive=false;
+        clearTimeout(this._lessonVoiceTimer);
+        window.speechSynthesis.cancel();
         const chooser=document.getElementById('lessonChooser'), panel=document.getElementById('lessonPanel');
         if(chooser)chooser.hidden=false; if(panel)panel.hidden=true;
         this._applyLessonLanguage();
