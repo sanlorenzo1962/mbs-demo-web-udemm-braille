@@ -889,6 +889,24 @@ const APP = {
         el.textContent = `${prefix}: ${this._voiceStatusText()}`;
     },
 
+    // Relaciona la velocidad de escritura (WPM) con la velocidad del TTS.
+    // Prueba local: escala conservadora para validar por audicion antes de publicar.
+    _getTtsRateFromWpm: function() {
+        const slider = document.getElementById('speedSlider');
+        const wpm = slider ? parseInt(slider.value, 10) : 25;
+
+        if (wpm <= 10) return 0.80;
+        if (wpm <= 15) return 0.88;
+        if (wpm <= 20) return 0.96;
+        if (wpm <= 25) return 1.00;
+        if (wpm <= 30) return 1.06;
+        if (wpm <= 35) return 1.12;
+        if (wpm <= 40) return 1.18;
+        if (wpm <= 45) return 1.24;
+        if (wpm <= 50) return 1.30;
+        return 1.35;
+    },
+
     _speakText: function(text, opts = {}) {
         if (!text || !('speechSynthesis' in window)) return null;
         if (!this.modoVoz && !opts.force) return null;
@@ -917,7 +935,7 @@ const APP = {
         const utt = new SpeechSynthesisUtterance(text);
         utt.lang = voice.lang || lang;
         utt.voice = voice;
-        utt.rate = opts.rate || 1.0;
+        utt.rate = opts.rate || this._getTtsRateFromWpm();
         utt.pitch = opts.pitch || 1.0;
         utt.volume = opts.volume || 1.0;
         if (typeof opts.onend === 'function') utt.onend = opts.onend;
