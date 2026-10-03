@@ -895,7 +895,7 @@ const APP = {
         const slider = document.getElementById('speedSlider');
         const wpm = slider ? parseInt(slider.value, 10) : 25;
 
-        if (wpm <= 10) return 0.80;
+        if (wpm <= 10) return 0.60;
         if (wpm <= 15) return 0.88;
         if (wpm <= 20) return 0.96;
         if (wpm <= 25) return 1.00;
