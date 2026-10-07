@@ -6,6 +6,13 @@ const APP = {
     bigChar: null,
     maskHex: null,
     idiomaActual: 'es-AR',
+    modoSeleccionado: 'inicial',
+    idiomaInicio: 'SET_ES',
+    temaInicio: 'oscuro',
+    escalaTextoInicio: 100,
+    contrasteInicio: 'normal',
+    vozInicio: true,
+    enPantallaInicio: true,
     sesionActiva: false,
     ws: null,
     palabraActual: "",
@@ -21,6 +28,21 @@ const APP = {
     _pausasCount: 0,       // cantidad de pausas >3s en la sesión
     _segActivos: 0,        // segundos activos (sin pausas)
     _langTtsTimer: null,    // estabiliza el cambio de voz al cambiar de idioma
+
+    // POC 05 — Modo Intermedio
+    intermediateSelected: new Set(),
+    intermediateWord: "",
+    intermediateLast: "",
+    // Traza paralela para el cierre por SP:
+    // conserva el contexto en el que nació cada carácter (texto o numérico).
+    intermediateSpeechTrace: [],
+    intermediateUppercase: false,
+    intermediateNumber: false,
+    intermediateFrenchPercentPrefix: false,
+    intermediateToneEnabled: true,
+    intermediateToneDuration: 0.64, // aprox. Nivel 5 del Modo Inicial
+    intermediateAudioCtx: null,
+    intermediateFrequencies: {1:330,2:392,3:466,4:554,5:659,6:784},
 
     // Textos estándar de la demo. Se centralizan para que el botón Ejemplo
     // y el cambio de idioma utilicen siempre el mismo texto por idioma.
@@ -79,20 +101,1012 @@ const APP = {
         0x01:"1", 0x03:"2", 0x09:"3", 0x19:"4", 0x11:"5", 0x0b:"6", 0x1b:"7", 0x13:"8", 0x0a:"9", 0x1a:"0", 0x36:"=",
     },
 
+    // Français — numération Antoine (CBFU).
+    // Le modificateur mathématique est le point 6 (0x20).
+    // Cette table ne s'applique qu'en mode numérique FR.
+    TABLA_NUM_FR_ANTOINE: {
+        0x21:"1", 0x23:"2", 0x29:"3", 0x39:"4", 0x31:"5",
+        0x2b:"6", 0x3b:"7", 0x33:"8", 0x2a:"9", 0x3c:"0",
+        0x16:"+", 0x24:"-", 0x14:"×", 0x12:"÷", 0x36:"="
+    },
+
+    configInicioModo: function(modo) {
+        this.modoSeleccionado = modo;
+    },
+
+    configInicioIdioma: function(lang) {
+        this.idiomaInicio = lang;
+    },
+
+    configInicioTema: function(tema) {
+        this.temaInicio = tema;
+        const esClaro = tema === 'claro';
+        document.body.classList.toggle('mbs-light', esClaro);
+
+        const btn = document.getElementById('accessTheme');
+        if (btn) {
+            btn.setAttribute('aria-pressed', esClaro ? 'true' : 'false');
+            btn.setAttribute('aria-label', esClaro ? 'Cambiar a tema oscuro' : 'Cambiar a tema claro');
+            btn.title = esClaro ? 'Cambiar a tema oscuro' : 'Cambiar a tema claro';
+            btn.classList.toggle('active', esClaro);
+        }
+    },
+
+    alternarTema: function() {
+        this.configInicioTema(this.temaInicio === 'claro' ? 'oscuro' : 'claro');
+    },
+
+    aplicarEscalaTexto: function() {
+        const min = 80;
+        const max = 140;
+        this.escalaTextoInicio = Math.max(min, Math.min(max, this.escalaTextoInicio));
+
+        document.documentElement.style.fontSize =
+            (16 * this.escalaTextoInicio / 100).toFixed(2) + 'px';
+
+        // La interfaz accesible usa siempre una disposición estable.
+        document.body.classList.add('mbs-text-reflow');
+
+        // A 140% se activa un reflow adicional de la portada para evitar
+        // barras internas y desplazamiento horizontal.
+        document.body.classList.toggle('mbs-text-140',
+            this.escalaTextoInicio >= 140);
+
+        const value = document.getElementById('accessTextValue');
+        if (value) value.textContent = this.escalaTextoInicio + '%';
+
+        const minus = document.getElementById('accessTextMinus');
+        const plus = document.getElementById('accessTextPlus');
+        if (minus) minus.disabled = this.escalaTextoInicio <= min;
+        if (plus) plus.disabled = this.escalaTextoInicio >= max;
+    },
+
+    ajustarTexto: function(delta) {
+        this.escalaTextoInicio += delta;
+        this.aplicarEscalaTexto();
+    },
+
+    restablecerTexto: function() {
+        this.escalaTextoInicio = 100;
+        this.aplicarEscalaTexto();
+    },
+
+    configInicioContraste: function(contraste) {
+        this.contrasteInicio = contraste;
+        const esAlto = contraste === 'alto';
+        document.body.classList.toggle('mbs-high-contrast', esAlto);
+
+        const btn = document.getElementById('accessContrast');
+        if (btn) {
+            btn.setAttribute('aria-pressed', esAlto ? 'true' : 'false');
+            btn.setAttribute('aria-label', esAlto ? 'Desactivar alto contraste' : 'Activar alto contraste');
+            btn.title = esAlto ? 'Desactivar alto contraste' : 'Activar alto contraste';
+            btn.classList.toggle('active', esAlto);
+        }
+    },
+
+    alternarContraste: function() {
+        this.configInicioContraste(this.contrasteInicio === 'alto' ? 'normal' : 'alto');
+    },
+
+    restablecerAccesibilidadVisual: function() {
+        this.escalaTextoInicio = 100;
+        this.aplicarEscalaTexto();
+        this.configInicioContraste('normal');
+        this.configInicioTema('oscuro');
+    },
+
+    configInicioVoz: function(on) {
+        this.vozInicio = !!on;
+    },
+
+    advancedBackToStart: function() {
+        const T = this.I18N[this.idiomaActual] || this.I18N['es-AR'];
+
+        // Una sesión activa no debe quedar corriendo oculta detrás de Inicio.
+        // No se detiene automáticamente para no alterar ni perder el resumen.
+        if (this.sesionActiva) {
+            if (this.modoVoz) {
+                this._speakText(T.tts_sesion_activa_volver, {cancel:true, rate:0.9});
+            }
+            return;
+        }
+
+        this.volverAInicio();
+    },
+
+    volverAInicio: function() {
+        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+        this.enPantallaInicio = true;
+
+        const placeholder = document.getElementById('mode-placeholder');
+        if (placeholder) placeholder.hidden = true;
+
+        this.initialLeave();
+        this.intermediateLeave();
+
+        const appMain = document.getElementById('app-main');
+        if (appMain) appMain.setAttribute('inert', '');
+
+        const overlay = document.getElementById('overlay-inicio');
+        if (overlay) overlay.style.display = 'flex';
+
+        // Devuelve el foco al primer control para navegación por teclado/lector.
+        window.setTimeout(() => {
+            const first = document.getElementById('startModeInitial');
+            if (first) first.focus();
+        }, 0);
+    },
+
     activarAccesibilidad: function() {
+        // Leer el estado REAL de los radios al pulsar INICIAR.
+        // Esto evita desincronizaciones cuando la selección se realiza
+        // mediante lector de pantalla o navegación asistida.
+        const voiceOff = document.getElementById('startVoiceOff');
+        const voiceOn = document.getElementById('startVoiceOn');
+
+        if (voiceOff && voiceOff.checked) {
+            this.vozInicio = false;
+        } else if (voiceOn && voiceOn.checked) {
+            this.vozInicio = true;
+        }
+
+        this.modoVoz = !!this.vozInicio;
+
+        // Si la voz queda desactivada, cancelar cualquier utterance
+        // que hubiera quedado pendiente.
+        if (!this.modoVoz && 'speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+            clearTimeout(this._langTtsTimer);
+        }
+
+        this.configInicioTema(this.temaInicio);
+        this.aplicarEscalaTexto();
+        this.configInicioContraste(this.contrasteInicio);
+
+        // Aplicar idioma sin anunciarlo aquí: la pantalla inicial ya
+        // dejó clara la selección y el Modo Inicial hará su propio anuncio.
+        this._suppressLangAnnouncementOnce = true;
+        this.setLang(this.idiomaInicio);
+
         const overlay = document.getElementById('overlay-inicio');
         if (overlay) overlay.style.display = 'none';
-        const T = this.I18N[this.idiomaActual] || this.I18N['es-AR'];
-        this._speakText(T.tts_listo, { cancel: true, force: true });
+        this.enPantallaInicio = false;
 
-        // Avisar al ESP32 que hay un usuario activo en la app
-        // (distinto a solo tener una conexion TCP abierta)
+        const appMain = document.getElementById('app-main');
+        if (appMain) appMain.setAttribute('inert', '');
+
+        const modoLabel = document.getElementById('modeCurrent');
+        const nombres = { inicial: 'MODO INICIAL', intermedio: 'MODO INTERMEDIO', avanzado: 'MODO AVANZADO' };
+        if (modoLabel) modoLabel.textContent = nombres[this.modoSeleccionado] || 'MODO';
+
+        // POC 03: Modo Inicial ya está integrado.
+        if (this.modoSeleccionado === 'inicial') {
+            this.initialEnter();
+            return;
+        }
+
+        // POC 05: Modo Intermedio integrado.
+        if (this.modoSeleccionado === 'intermedio') {
+            this.intermediateEnter();
+            return;
+        }
+
+        // Sólo el modo Avanzado utiliza por ahora la WebApp existente.
+        // Recién aquí se habilita para teclado y lector de pantalla.
+        if (appMain) appMain.removeAttribute('inert');
+
+        // El Avanzado hereda las preferencias elegidas en Inicio.
+        // Tema, escala, contraste, idioma y Voz MBS ya fueron aplicados arriba.
+        // Reaplicamos sólo los textos visibles/aria del panel.
+        this._aplicarIdioma();
+
+        const T = this.I18N[this.idiomaActual] || this.I18N['es-AR'];
+        if (this.modoVoz) this._speakText(T.tts_listo, { cancel: true, force: true });
+
+        // Avisar al ESP32 que hay un usuario activo en la app.
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.ws.send("APP_READY");
         } else if (this.ws) {
-            // WS todavia no abrio (carga lenta): esperar una sola vez
             this.ws.addEventListener('open', () => this.ws.send("APP_READY"), { once: true });
         }
+    },
+
+
+    // ===== POC 03 — MODO INICIAL =====
+    initialAudioCtx: null,
+    initialAutoOffTimer: null,
+    initialFrequencies: {1:330,2:392,3:466,4:554,5:659,6:784},
+
+    initialText: {
+        'es-AR': {
+            title:'Modo Inicial', status:'Seleccione un punto',
+            point:'Punto', keyboard:'Disposición del teclado MBS',
+            tone:'Duración del tono', level:'Nivel',
+            back:'Volver a inicio',
+            hint:'Los puntos 1–6 se presentan individualmente: se iluminan, reproducen su tono y se apagan automáticamente. EN y SP muestran la disposición física del MBS y no tienen función en este nivel.'
+        },
+        'pt-BR': {
+            title:'Modo Inicial', status:'Selecione um ponto',
+            point:'Ponto', keyboard:'Disposição do teclado MBS',
+            tone:'Duração do tom', level:'Nível',
+            back:'Voltar ao início',
+            hint:'Os pontos 1–6 são apresentados individualmente: acendem, reproduzem seu tom e apagam automaticamente. EN e SP mostram a disposição física do MBS e não têm função neste nível.'
+        },
+        'en-US': {
+            title:'Initial Mode', status:'Select a dot',
+            point:'Dot', keyboard:'MBS keyboard layout',
+            tone:'Tone duration', level:'Level',
+            back:'Back to start',
+            hint:'Dots 1–6 are presented individually: they light up, play their tone and turn off automatically. EN and SP show the physical MBS layout and have no function at this level.'
+        },
+        'fr-FR': {
+            title:'Mode Initial', status:'Sélectionnez un point',
+            point:'Point', keyboard:'Disposition du clavier MBS',
+            tone:'Durée du son', level:'Niveau',
+            back:'Retour au début',
+            hint:'Les points 1 à 6 sont présentés individuellement : ils s’allument, reproduisent leur son puis s’éteignent automatiquement. EN et SP montrent la disposition physique du MBS et n’ont pas de fonction à ce niveau.'
+        }
+    },
+
+    initialLangShort: function() {
+        return {'es-AR':'ES','pt-BR':'PT','en-US':'EN','fr-FR':'FR'}[this.idiomaActual] || 'ES';
+    },
+
+    initialToneDurationFromLevel: function(level) {
+        const n = Math.max(1, Math.min(10, parseInt(level, 10) || 5));
+        return 0.2 + ((n - 1) * (1.0 / 9.0));
+    },
+
+    initialEnsureAudio: function() {
+        if (!this.initialAudioCtx) {
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            if (Ctx) this.initialAudioCtx = new Ctx();
+        }
+        if (this.initialAudioCtx && this.initialAudioCtx.state === 'suspended') {
+            this.initialAudioCtx.resume();
+        }
+    },
+
+    initialPlayTone: function(point) {
+        this.initialEnsureAudio();
+        if (!this.initialAudioCtx) return;
+
+        const slider = document.getElementById('initialToneDuration');
+        const duration = this.initialToneDurationFromLevel(slider?.value);
+        const ctx = this.initialAudioCtx;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        const attack = 0.02;
+        const release = Math.min(0.15, duration * 0.25);
+        const sustainEnd = Math.max(attack, duration - release);
+
+        osc.type = 'sine';
+        osc.frequency.value = this.initialFrequencies[point];
+        gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + attack);
+        gain.gain.setValueAtTime(0.18, ctx.currentTime + sustainEnd);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + duration + 0.02);
+    },
+
+    initialSetPoint: function(point, active) {
+        const dot = document.getElementById('initialDot' + point);
+        const btn = document.querySelector(`button[data-initial-point="${point}"]`);
+        if (dot) dot.classList.toggle('active', active);
+        if (btn) {
+            btn.classList.toggle('pressed', active);
+}
+    },
+
+    initialClearPoints: function(statusText = null) {
+        if (this.initialAutoOffTimer) {
+            clearTimeout(this.initialAutoOffTimer);
+            this.initialAutoOffTimer = null;
+        }
+        for (let i = 1; i <= 6; i++) this.initialSetPoint(i, false);
+        const T = this.initialText[this.idiomaActual] || this.initialText['es-AR'];
+        const status = document.getElementById('initialStatus');
+        if (status) status.textContent = statusText || T.status;
+    },
+
+    initialPresentPoint: function(point) {
+        if (point < 1 || point > 6) return;
+
+        this.initialClearPoints();
+        this.initialSetPoint(point, true);
+
+        const T = this.initialText[this.idiomaActual] || this.initialText['es-AR'];
+        const status = document.getElementById('initialStatus');
+        const phrase = `${T.point} ${point}`;
+        if (status) status.textContent = phrase;
+
+        this.initialPlayTone(point);
+
+        // Si la voz educativa está activa, la locución MBS da el feedback.
+        // Si está desactivada, aria-live permite que el lector de pantalla
+        // anuncie el cambio de estado.
+        if (this.modoVoz) {
+            this._speakText(phrase, { cancel: true });
+        }
+
+        const slider = document.getElementById('initialToneDuration');
+        const duration = this.initialToneDurationFromLevel(slider?.value);
+        this.initialAutoOffTimer = setTimeout(() => {
+            this.initialSetPoint(point, false);
+            if (status) status.textContent = T.status;
+            this.initialAutoOffTimer = null;
+        }, Math.round(duration * 1000));
+    },
+
+    initialUpdateToneLabel: function() {
+        const slider = document.getElementById('initialToneDuration');
+        const value = document.getElementById('initialToneDurationValue');
+        if (!slider || !value) return;
+
+        const level = Math.max(1, Math.min(10, parseInt(slider.value, 10) || 5));
+        const T = this.initialText[this.idiomaActual] || this.initialText['es-AR'];
+
+        value.textContent = `${T.level} ${level}`;
+        slider.setAttribute('aria-valuenow', String(level));
+        slider.setAttribute('aria-valuetext', `${T.level} ${level}`);
+    },
+
+    initialApplyLanguage: function() {
+        const T = this.initialText[this.idiomaActual] || this.initialText['es-AR'];
+        const screen = document.getElementById('mode-inicial');
+        if (screen) screen.setAttribute('lang', this.idiomaActual);
+
+        const title = document.getElementById('initialTitle');
+        const badge = document.getElementById('initialLangBadge');
+        const status = document.getElementById('initialStatus');
+        const keyboard = document.getElementById('initialKeyboardLabel');
+        const tone = document.getElementById('initialToneLabel');
+        const back = document.getElementById('initialBackBtn');
+        const hint = document.getElementById('initialHint');
+
+        if (title) title.textContent = T.title;
+        if (badge) badge.textContent = this.initialLangShort();
+        if (status) status.textContent = T.status;
+        if (keyboard) keyboard.textContent = T.keyboard;
+        if (back) back.textContent = T.back;
+        if (hint) hint.textContent = T.hint;
+
+        // Conservar el valor actual del slider y traducir sólo su etiqueta.
+        if (tone) {
+            const strong = document.getElementById('initialToneDurationValue');
+            tone.childNodes[0].nodeValue = T.tone + ': ';
+            if (strong && !tone.contains(strong)) tone.appendChild(strong);
+        }
+
+        for (let i = 1; i <= 6; i++) {
+            const btn = document.querySelector(`button[data-initial-point="${i}"]`);
+            if (btn) btn.setAttribute('aria-label', `${T.point} ${i}`);
+        }
+
+        this.initialUpdateToneLabel();
+    },
+
+    initialPrepareAccessibility: function() {
+        const status = document.getElementById('initialStatus');
+        if (!status) return;
+
+        // Narrador/NVDA no deben recibir anuncios automáticos del estado.
+        // La navegación por foco ya aporta la información necesaria.
+        status.setAttribute('aria-live', 'off');
+    },
+
+    initialSpeak: function(text, cancel = true) {
+        if (!this.modoVoz || !text) return;
+        this._speakText(text, { cancel: cancel });
+    },
+
+    initialSpeakToneControl: function() {
+        const slider = document.getElementById('initialToneDuration');
+        if (!slider) return;
+
+        const T = this.initialText[this.idiomaActual] || this.initialText['es-AR'];
+        const level = Math.max(1, Math.min(10, parseInt(slider.value, 10) || 5));
+
+        this.initialSpeak(`${T.tone}. ${T.level} ${level}.`);
+    },
+
+    initialEnter: function() {
+        const screen = document.getElementById('mode-inicial');
+        if (!screen) return;
+
+        screen.hidden = false;
+        screen.removeAttribute('inert');
+        this.initialApplyLanguage();
+        this.initialPrepareAccessibility();
+        this.initialClearPoints();
+
+        const T = this.initialText[this.idiomaActual] || this.initialText['es-AR'];
+
+        // El anuncio de entrada pertenece exclusivamente a la voz educativa MBS.
+        if (this.modoVoz) {
+            this.initialSpeak(`${T.title}. ${T.status}.`);
+        }
+
+        // No se fuerza foco al entrar.
+        // Narrador/NVDA y el usuario comienzan la navegación cuando lo deciden.
+    },
+
+    initialLeave: function() {
+        const screen = document.getElementById('mode-inicial');
+        if (screen) {
+            screen.hidden = true;
+            screen.setAttribute('inert', '');
+        }
+        this.initialClearPoints();
+        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    },
+
+
+    // ===== POC 05 — MODO INTERMEDIO =====
+    intermediateText: {
+        'es-AR': {
+            title:'Modo Intermedio', status:'Escriba un carácter',
+            point:'Punto', keyboard:'Disposición del teclado MBS',
+            char:'Carácter', building:'Escribiendo', last:'Último resultado',
+            back:'Volver a inicio', confirm:'Confirmar celda',
+            space:'Espacio. Finalizar palabra o número',
+            toneOn:'Tonos de pulsación: ACTIVADOS',
+            toneOff:'Tonos de pulsación: DESACTIVADOS', toneFocusOn:'Tonos de pulsación. Activados', toneFocusOff:'Tonos de pulsación. Desactivados',
+            may:'Mayúscula', num:'Número',
+            mayReady:'Mayúscula activa. Ingrese una letra',
+            numReady:'Número activo. Ingrese el siguiente dígito o pulse SP para finalizar',
+            invalid:'Combinación no válida',
+            invalidNum:'Combinación no válida en modo numérico',
+            empty:'Escriba primero una palabra o número',
+            newEntry:'Escriba una nueva palabra, número o secuencia', wrote:'Escribiste',
+            hint:'EN confirma la celda. MAY. afecta sólo a la próxima letra. NÚM. permanece activo hasta SP. Se admiten signos básicos de puntuación y matemáticos. SP confirma los caracteres escritos y prepara una nueva entrada.'
+        },
+        'pt-BR': {
+            title:'Modo Intermediário', status:'Escreva um caractere',
+            point:'Ponto', keyboard:'Disposição do teclado MBS',
+            char:'Caractere', building:'Escrevendo', last:'Último resultado',
+            back:'Voltar ao início', confirm:'Confirmar cela',
+            space:'Espaço. Finalizar palavra ou número',
+            toneOn:'Tons das teclas: ATIVADOS',
+            toneOff:'Tons das teclas: DESATIVADOS', toneFocusOn:'Tons das teclas. Ativados', toneFocusOff:'Tons das teclas. Desativados',
+            may:'Maiúscula', num:'Número',
+            mayReady:'Maiúscula ativa. Digite uma letra',
+            numReady:'Número ativo. Digite o próximo algarismo ou pressione SP para finalizar',
+            invalid:'Combinação não válida',
+            invalidNum:'Combinação não válida no modo numérico',
+            empty:'Escreva primeiro uma palavra ou número',
+            newEntry:'Escreva uma nova palavra, número ou sequência', wrote:'Você escreveu',
+            hint:'EN confirma a cela. MAIÚSCULA afeta somente a próxima letra. NÚM. permanece ativo até SP. São aceitos sinais básicos de pontuação e matemática. SP confirma os caracteres escritos e prepara uma nova entrada.'
+        },
+        'en-US': {
+            title:'Intermediate Mode', status:'Write a character',
+            point:'Dot', keyboard:'MBS keyboard layout',
+            char:'Character', building:'Writing', last:'Last result',
+            back:'Back to start', confirm:'Confirm cell',
+            space:'Space. Finish word or number',
+            toneOn:'Key tones: ON',
+            toneOff:'Key tones: OFF', toneFocusOn:'Key tones. On', toneFocusOff:'Key tones. Off',
+            may:'Capital', num:'Number',
+            mayReady:'Capital active. Enter a letter',
+            numReady:'Number active. Enter the next digit or press SP to finish',
+            invalid:'Invalid combination',
+            invalidNum:'Invalid combination in number mode',
+            empty:'Write a word or number first',
+            newEntry:'Write a new word, number or sequence', wrote:'You wrote',
+            hint:'EN confirms the cell. CAPITAL affects only the next letter. NUM. remains active until SP. Basic punctuation and mathematical symbols are supported. SP confirms the characters entered and prepares a new entry.'
+        },
+        'fr-FR': {
+            title:'Mode Intermédiaire', status:'Écrivez un caractère',
+            point:'Point', keyboard:'Disposition du clavier MBS',
+            char:'Caractère', building:'Écriture', last:'Dernier résultat',
+            back:'Retour au début', confirm:'Confirmer la cellule',
+            space:'Espace. Terminer le mot ou le nombre',
+            toneOn:'Sons des touches : ACTIVÉS',
+            toneOff:'Sons des touches : DÉSACTIVÉS', toneFocusOn:'Sons des touches. Activés', toneFocusOff:'Sons des touches. Désactivés',
+            may:'Majuscule', num:'Nombre', numAntoine:'Notation Antoine',
+            mayReady:'Majuscule active. Saisissez une lettre',
+            numReady:'Notation Antoine active. Saisissez un chiffre ou un opérateur, ou appuyez sur SP pour terminer',
+            percentReady:'Pour cent : première cellule saisie. Entrez maintenant les points 3, 4 et 6',
+            invalid:'Combinaison non valide',
+            invalidNum:'Combinaison non valide en notation Antoine',
+            empty:'Écrivez d’abord un mot ou un nombre',
+            newEntry:'Écrivez un nouveau mot, nombre ou une séquence', wrote:'Vous avez écrit',
+            hint:'EN confirme la cellule. MAJUSCULE n’affecte que la lettre suivante. En français, le point 6 active la notation Antoine jusqu’à SP. Chiffres et opérateurs de base sont alors interprétés selon le CBFU. SP confirme les caractères saisis et prépare une nouvelle saisie.'
+        }
+    },
+
+    intermediateLangShort: function() {
+        return {'es-AR':'ES','pt-BR':'PT','en-US':'EN','fr-FR':'FR'}[this.idiomaActual] || 'ES';
+    },
+
+    intermediateEnsureAudio: function() {
+        if (!this.intermediateAudioCtx) {
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            if (Ctx) this.intermediateAudioCtx = new Ctx();
+        }
+        if (this.intermediateAudioCtx && this.intermediateAudioCtx.state === 'suspended') {
+            this.intermediateAudioCtx.resume();
+        }
+    },
+
+    intermediatePlayTone: function(point) {
+        if (!this.intermediateToneEnabled) return;
+        this.intermediateEnsureAudio();
+        if (!this.intermediateAudioCtx) return;
+
+        const ctx = this.intermediateAudioCtx;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        const duration = this.intermediateToneDuration;
+        const attack = 0.02;
+        const release = Math.min(0.15, duration * 0.25);
+        const sustainEnd = Math.max(attack, duration - release);
+
+        osc.type = 'sine';
+        osc.frequency.value = this.intermediateFrequencies[point];
+        gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + attack);
+        gain.gain.setValueAtTime(0.18, ctx.currentTime + sustainEnd);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + duration + 0.02);
+    },
+
+    intermediateSetPoint: function(point, active) {
+        const dot = document.getElementById('intermediateDot' + point);
+        const btn = document.querySelector(`button[data-intermediate-point="${point}"]`);
+        if (dot) dot.classList.toggle('active', active);
+        if (btn) btn.classList.toggle('pressed', active);
+    },
+
+    intermediateRefreshSelection: function() {
+        for (let i = 1; i <= 6; i++) {
+            this.intermediateSetPoint(i, this.intermediateSelected.has(i));
+        }
+    },
+
+    intermediateClearCell: function() {
+        this.intermediateSelected.clear();
+        this.intermediateRefreshSelection();
+    },
+
+    intermediateRefreshModes: function() {
+        const may = document.getElementById('intermediateMayBadge');
+        const num = document.getElementById('intermediateNumBadge');
+        if (may) may.classList.toggle('active', !!this.intermediateUppercase);
+        if (num) {
+            num.classList.toggle('active', !!this.intermediateNumber);
+            num.textContent = this.idiomaActual === 'fr-FR' ? 'ANT.' : 'NÚM.';
+        }
+    },
+
+    intermediateRefreshText: function() {
+        const building = document.getElementById('intermediateBuilding');
+        const last = document.getElementById('intermediateLast');
+        if (building) building.textContent = this.intermediateWord || '—';
+        if (last) last.textContent = this.intermediateLast || '—';
+    },
+
+    intermediateSetStatus: function(text) {
+        const el = document.getElementById('intermediateStatus');
+        if (el) el.textContent = text;
+    },
+
+    intermediateSetChar: function(text) {
+        const el = document.getElementById('intermediateChar');
+        if (el) {
+            const value = text || '—';
+            el.textContent = value;
+            // MAY., NÚM. y ANT. son indicadores de estado, no caracteres Braille.
+            // Se mantienen a tamaño estable para que A+/140% no los desborde.
+            el.classList.toggle('intermediate-char-state',
+                value === 'MAY.' || value === 'NÚM.' || value === 'ANT.');
+        }
+    },
+
+    intermediateTogglePoint: function(point) {
+        if (point < 1 || point > 6) return;
+
+        if (this.intermediateSelected.has(point)) {
+            this.intermediateSelected.delete(point);
+        } else {
+            this.intermediateSelected.add(point);
+            this.intermediatePlayTone(point);
+        }
+        this.intermediateRefreshSelection();
+    },
+
+    intermediateSelectedMask: function() {
+        let mask = 0;
+        const bits = {1:1, 2:2, 3:4, 4:8, 5:16, 6:32};
+        this.intermediateSelected.forEach(p => { mask |= bits[p] || 0; });
+        return mask;
+    },
+
+    intermediateResolveChar: function(mask) {
+        // En modo numérico se agregan los signos básicos ya previstos
+        // por el traductor/Avanzado.
+        if (this.intermediateNumber) {
+            if (this.idiomaActual === 'fr-FR') {
+                return this.TABLA_NUM_FR_ANTOINE[mask] || '';
+            }
+
+            // En ES, las celdas 236 y 34 se muestran como multiplicación y división
+            // en contexto matemático. PT/EN conservan por ahora */ hasta validar
+            // su signografía matemática específica.
+            const numericSymbols =
+                this.idiomaActual === 'es-AR'
+                ? {0x02:',', 0x04:'.', 0x0c:'÷', 0x0f:'%',
+                   0x16:'+', 0x24:'-', 0x26:'×', 0x36:'='}
+                : {0x02:',', 0x04:'.', 0x0c:'/', 0x0f:'%',
+                   0x16:'+', 0x24:'-', 0x26:'*', 0x36:'='};
+
+            return this.TABLA_NUM[mask] || numericSymbols[mask] || '';
+        }
+
+        const tabla =
+            this.idiomaActual === 'es-AR' ? this.TABLA_ES :
+            this.idiomaActual === 'fr-FR' ? this.TABLA_FR :
+            this.idiomaActual === 'pt-BR' ? this.TABLA_PT :
+            this.TABLA_ES; // EN comparte alfabeto/signos base de ES en esta demo.
+
+        let ch = tabla[mask] || '';
+        if (!ch) return '';
+
+        // Tokens internos del firmware/WebApp.
+        if (ch === 'COMILLA') ch = '"';
+        if (ch === 'APOSTROFE') ch = "'";
+
+        // MAY. sólo afecta letras.
+        if (/[A-Za-zÀ-ÖØ-öø-ÿÑñÇçŒœ]/.test(ch)) {
+            if (this.intermediateUppercase) ch = ch.toUpperCase();
+            else ch = ch.toLowerCase();
+        }
+        return ch;
+    },
+
+    intermediateSpeechName: function(ch, numericContext=false) {
+        const names = {
+            'es-AR': {
+                ',':'coma', '.':'punto', ';':'punto y coma', ':':'dos puntos',
+                '?':'signo de interrogación', '!':'signo de exclamación',
+                '-':'guión', "'":'apóstrofe', '"':'comillas',
+                '(':'abre paréntesis', ')':'cierra paréntesis',
+                '/':'barra', '+':'más', '*':'asterisco', '×':'por', '÷':'dividido por', '=':'igual', '%':'por ciento'
+            },
+            'pt-BR': {
+                ',':'vírgula', '.':'ponto', ';':'ponto e vírgula', ':':'dois pontos',
+                '?':'ponto de interrogação', '!':'ponto de exclamação',
+                '-':'hífen', "'":'apóstrofo', '"':'aspas',
+                '(':'abre parênteses', ')':'fecha parênteses',
+                '/':'barra', '+':'mais', '*':'asterisco', '×':'vezes', '÷':'dividido por', '=':'igual', '%':'por cento'
+            },
+            'en-US': {
+                ',':'comma', '.':'period', ';':'semicolon', ':':'colon',
+                '?':'question mark', '!':'exclamation mark',
+                '-':'hyphen', "'":'apostrophe', '"':'quotation mark',
+                '(':'open parenthesis', ')':'close parenthesis',
+                '/':'slash', '+':'plus', '*':'asterisk', '×':'times', '÷':'divided by', '=':'equals', '%':'percent'
+            },
+            'fr-FR': {
+                ',':'virgule', '.':'point', ';':'point-virgule', ':':'deux-points',
+                '?':'point d’interrogation', '!':'point d’exclamation',
+                '-':'trait d’union', "'":'apostrophe', '"':'guillemet',
+                '(':'parenthèse ouvrante', ')':'parenthèse fermante',
+                '/':'barre oblique', '+':'plus', '*':'astérisque', '×':'multiplié par', '÷':'divisé par', '=':'égal', '%':'pour cent'
+            }
+        };
+        const dict = names[this.idiomaActual] || names['es-AR'];
+
+        // El mismo signo visual "-" cambia de función según contexto.
+        // Texto: guion / hífen / hyphen / tiret.
+        // Numérico: menos / menos / minus / moins.
+        if (ch === '-' && numericContext) {
+            const minus = {
+                'es-AR':'menos',
+                'pt-BR':'menos',
+                'en-US':'minus',
+                'fr-FR':'moins'
+            };
+            return minus[this.idiomaActual] || minus['es-AR'];
+        }
+
+        return dict[ch] || ch;
+    },
+
+    intermediateSpellingForSpeech: function(text, numericContext=false) {
+        return Array.from(text)
+            .map(ch => this.intermediateSpeechName(ch, numericContext))
+            .join(', ');
+    },
+
+    intermediateHandleCell: function(mask) {
+        const T = this.intermediateText[this.idiomaActual] || this.intermediateText['es-AR'];
+        const m = parseInt(mask, 10) || 0;
+
+        if (!m) return;
+
+        // MAY. = puntos 4+6
+        if (m === 0x28) {
+            this.intermediateUppercase = true;
+            this.intermediateSetChar('MAY.');
+            this.intermediateRefreshModes();
+            this.intermediateSetStatus(T.mayReady);
+            if (this.modoVoz) this._speakText(T.may, {cancel:true, rate:0.9});
+            return;
+        }
+
+        // FR CBFU: porcentaje compuesto = punto 5 seguido de puntos 3-4-6.
+        // Se interpreta sólo dentro del contexto Antoine.
+        if (this.idiomaActual === 'fr-FR' && this.intermediateNumber) {
+            if (this.intermediateFrenchPercentPrefix) {
+                this.intermediateFrenchPercentPrefix = false;
+
+                if (m === 0x2c) { // 3+4+6
+                    const ch = '%';
+                    this.intermediateSetChar(ch);
+                    this.intermediateWord += ch;
+                    this.intermediateSpeechTrace.push({ ch: ch, numericContext: true });
+                    this.intermediateRefreshText();
+                    this.intermediateRefreshModes();
+                    this.intermediateSetStatus(T.numReady);
+
+                    if (this.modoVoz) {
+                        this._speakText(this.intermediateSpeechName(ch, true),
+                            {cancel:true, rate:0.9});
+                    }
+                    return;
+                }
+
+                this.intermediateSetChar('?');
+                this.intermediateSetStatus(T.invalidNum);
+                if (this.modoVoz) {
+                    this._speakText(T.invalidNum, {cancel:true, rate:0.9});
+                }
+                return;
+            }
+
+            if (m === 0x10) { // punto 5 = primera celda del signo %
+                this.intermediateFrenchPercentPrefix = true;
+                this.intermediateSetChar('%…');
+                this.intermediateSetStatus(T.percentReady);
+                if (this.modoVoz) {
+                    this._speakText(T.percentReady, {cancel:true, rate:0.9});
+                }
+                return;
+            }
+        }
+
+        // Contexto numérico por idioma.
+        // FR (CBFU/Antoine): el punto 6 actúa como modificador matemático.
+        if (this.idiomaActual === 'fr-FR' && m === 0x20) {
+            this.intermediateNumber = true;
+            this.intermediateUppercase = false;
+            this.intermediateSetChar('ANT.');
+            this.intermediateRefreshModes();
+            this.intermediateSetStatus(T.numReady);
+            if (this.modoVoz) this._speakText(T.numAntoine || T.num, {cancel:true, rate:0.9});
+            return;
+        }
+
+        // ES/PT/EN: NÚM. = puntos 3+4+5+6. Permanece hasta SP.
+        if (this.idiomaActual !== 'fr-FR' && m === 0x3c) {
+            this.intermediateNumber = true;
+            this.intermediateUppercase = false;
+            this.intermediateSetChar('NÚM.');
+            this.intermediateRefreshModes();
+            this.intermediateSetStatus(T.numReady);
+            if (this.modoVoz) this._speakText(T.num, {cancel:true, rate:0.9});
+            return;
+        }
+
+        const ch = this.intermediateResolveChar(m);
+        if (!ch) {
+            this.intermediateSetChar('?');
+            this.intermediateSetStatus(this.intermediateNumber ? T.invalidNum : T.invalid);
+            if (this.modoVoz) {
+                this._speakText(this.intermediateNumber ? T.invalidNum : T.invalid,
+                    {cancel:true, rate:0.9});
+            }
+            return;
+        }
+
+        this.intermediateSetChar(ch);
+        this.intermediateWord += ch;
+        this.intermediateSpeechTrace.push({
+            ch: ch,
+            numericContext: !!this.intermediateNumber
+        });
+        this.intermediateRefreshText();
+
+        // MAY. se consume sólo después de una letra válida.
+        if (this.intermediateUppercase && /[A-Za-zÀ-ÖØ-öø-ÿÑñÇçŒœ]/.test(ch)) {
+            this.intermediateUppercase = false;
+        }
+        this.intermediateRefreshModes();
+
+        if (this.intermediateNumber) {
+            this.intermediateSetStatus(T.numReady);
+        } else {
+            this.intermediateSetStatus(T.status);
+        }
+
+        // Realimentación inmediata: para signos se pronuncia su nombre.
+        if (this.modoVoz) {
+            this._speakText(
+                this.intermediateSpeechName(ch, this.intermediateNumber),
+                {cancel:true, rate:0.9}
+            );
+        }
+    },
+
+    intermediateConfirmSelection: function() {
+        const T = this.intermediateText[this.idiomaActual] || this.intermediateText['es-AR'];
+        const mask = this.intermediateSelectedMask();
+        if (!mask) {
+            this.intermediateSetStatus(T.status);
+            return;
+        }
+
+        this.intermediateHandleCell(mask);
+        this.intermediateClearCell();
+    },
+
+    intermediateFinishWord: function() {
+        const T = this.intermediateText[this.idiomaActual] || this.intermediateText['es-AR'];
+        const word = (this.intermediateWord || '').trim();
+
+        this.intermediateClearCell();
+
+        if (!word) {
+            this.intermediateSetStatus(T.empty);
+            if (this.modoVoz) this._speakText(T.empty, {cancel:true, rate:0.9});
+            return;
+        }
+
+        const speechTrace = Array.isArray(this.intermediateSpeechTrace)
+            ? this.intermediateSpeechTrace.slice()
+            : [];
+
+        this.intermediateLast = word;
+        this.intermediateWord = '';
+        this.intermediateSpeechTrace = [];
+        this.intermediateUppercase = false;
+        this.intermediateNumber = false;
+        this.intermediateFrenchPercentPrefix = false;
+        this.intermediateRefreshModes();
+        this.intermediateRefreshText();
+        this.intermediateSetChar('—');
+        this.intermediateSetStatus(T.newEntry);
+
+        // SP confirma exactamente los caracteres escritos.
+        // En Intermedio evitamos interpretación semántica del TTS
+        // (abreviaturas, unidades, nombres, palabras inventadas).
+        if (this.modoVoz) {
+            const spelled = speechTrace.length
+                ? speechTrace
+                    .map(item => this.intermediateSpeechName(item.ch, !!item.numericContext))
+                    .join(', ')
+                : this.intermediateSpellingForSpeech(word, false);
+            this._speakText(`${T.wrote} ${spelled}`, {cancel:true, rate:0.9});
+        }
+    },
+
+    intermediateToggleTone: function() {
+        this.intermediateToneEnabled = !this.intermediateToneEnabled;
+        this.intermediateApplyLanguage();
+
+        const T = this.intermediateText[this.idiomaActual] || this.intermediateText['es-AR'];
+        if (this.modoVoz) {
+            this._speakText(
+                this.intermediateToneEnabled ? T.toneFocusOn : T.toneFocusOff,
+                {cancel:true, rate:0.9}
+            );
+        }
+    },
+
+    intermediateApplyLanguage: function() {
+        const T = this.intermediateText[this.idiomaActual] || this.intermediateText['es-AR'];
+        const screen = document.getElementById('mode-intermedio');
+        if (screen) screen.setAttribute('lang', this.idiomaActual);
+
+        const set = (id, text) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = text;
+        };
+
+        set('intermediateTitle', T.title);
+        set('intermediateLangBadge', this.intermediateLangShort());
+        set('intermediateCharLabel', T.char);
+        set('intermediateBuildingLabel', T.building);
+        set('intermediateLastLabel', T.last);
+        set('intermediateKeyboardLabel', T.keyboard);
+        set('intermediateHint', T.hint);
+
+        const back = document.getElementById('intermediateBackBtn');
+        if (back) back.textContent = T.back;
+
+        const tone = document.getElementById('intermediateToneToggle');
+        if (tone) {
+            tone.textContent = this.intermediateToneEnabled ? T.toneOn : T.toneOff;
+            tone.setAttribute('aria-pressed', this.intermediateToneEnabled ? 'true' : 'false');
+        }
+
+        document.querySelectorAll('button[data-intermediate-point]').forEach(btn => {
+            const p = parseInt(btn.dataset.intermediatePoint, 10);
+            btn.setAttribute('aria-label', `${T.point} ${p}`);
+        });
+        document.querySelectorAll('button[data-intermediate-enter]').forEach(btn => {
+            btn.setAttribute('aria-label', T.confirm);
+        });
+        const sp = document.getElementById('intermediateSpaceBtn');
+        if (sp) sp.setAttribute('aria-label', T.space);
+    },
+
+    intermediateReset: function() {
+        const T = this.intermediateText[this.idiomaActual] || this.intermediateText['es-AR'];
+        this.intermediateSelected.clear();
+        this.intermediateWord = '';
+        this.intermediateSpeechTrace = [];
+        this.intermediateLast = '';
+        this.intermediateUppercase = false;
+        this.intermediateNumber = false;
+        this.intermediateFrenchPercentPrefix = false;
+        this.intermediateRefreshSelection();
+        this.intermediateRefreshModes();
+        this.intermediateRefreshText();
+        this.intermediateSetChar('—');
+        this.intermediateSetStatus(T.status);
+    },
+
+    intermediateEnter: function() {
+        const screen = document.getElementById('mode-intermedio');
+        if (!screen) return;
+
+        screen.hidden = false;
+        screen.removeAttribute('inert');
+        this.intermediateApplyLanguage();
+        this.intermediateReset();
+
+        const T = this.intermediateText[this.idiomaActual] || this.intermediateText['es-AR'];
+        if (this.modoVoz) {
+            this._speakText(`${T.title}. ${T.status}.`, {cancel:true, rate:0.9});
+        }
+        // No se fuerza el foco: mismo criterio adoptado en Modo Inicial.
+    },
+
+    intermediateLeave: function() {
+        const screen = document.getElementById('mode-intermedio');
+        if (screen) {
+            screen.hidden = true;
+            screen.setAttribute('inert', '');
+        }
+        this.intermediateClearCell();
+        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    },
+
+    intermediateHandleWs: function(data) {
+        const m = parseInt(data.m, 10) || 0;
+        const val = data.val;
+
+        // En el MBS físico la celda llega ya confirmada por el firmware.
+        // SP finaliza la palabra/número. ENTER no se usa en este nivel.
+        if (m === 0 || val === ' ') {
+            this.intermediateFinishWord();
+            return;
+        }
+        if (val === 'ENTER') {
+            return;
+        }
+
+        this.intermediateHandleCell(m);
     },
 
     init: function() {
@@ -104,6 +1118,93 @@ const APP = {
         this.brailleBuffer = document.getElementById('brailleBuffer');
         this.bigChar = document.getElementById('bigChar');
         this.maskHex = document.getElementById('maskHex');
+
+        // POC 03 — eventos del Modo Inicial
+        document.querySelectorAll('button[data-initial-point]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const point = parseInt(btn.dataset.initialPoint, 10);
+                this.initialPresentPoint(point);
+            });
+        });
+
+        const initialSlider = document.getElementById('initialToneDuration');
+        if (initialSlider) {
+            initialSlider.addEventListener('input', () => this.initialUpdateToneLabel());
+
+            // Con Narrador/NVDA desactivado, la voz MBS identifica el control.
+            initialSlider.addEventListener('focus', () => {
+                this.initialSpeakToneControl();
+            });
+
+            // Al confirmar un cambio, pronuncia sólo el nivel.
+            initialSlider.addEventListener('change', () => {
+                if (!this.modoVoz) return;
+                const T = this.initialText[this.idiomaActual] || this.initialText['es-AR'];
+                const level = Math.max(1, Math.min(10, parseInt(initialSlider.value, 10) || 5));
+                this.initialSpeak(`${T.level} ${level}.`);
+            });
+        }
+
+        const initialBack = document.getElementById('initialBackBtn');
+        if (initialBack) {
+            initialBack.addEventListener('focus', () => {
+                if (this.initialSuppressBackFocusSpeech) {
+                    this.initialSuppressBackFocusSpeech = false;
+                    return;
+                }
+                const T = this.initialText[this.idiomaActual] || this.initialText['es-AR'];
+                this.initialSpeak(T.back);
+            });
+        }
+
+        // POC 05 — eventos del Modo Intermedio
+        document.querySelectorAll('button[data-intermediate-point]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const point = parseInt(btn.dataset.intermediatePoint, 10);
+                this.intermediateTogglePoint(point);
+            });
+
+            // En Intermedio la Voz MBS debe ser ágil: anuncia sólo el número.
+            // El aria-label conserva "Punto/Dot/Point N" para lectores de pantalla.
+            btn.addEventListener('focus', () => {
+                const point = parseInt(btn.dataset.intermediatePoint, 10);
+                if (this.modoVoz && point >= 1 && point <= 6) {
+                    this._speakText(String(point), {cancel:true, rate:0.95});
+                }
+            });
+        });
+
+        document.querySelectorAll('button[data-intermediate-enter]').forEach(btn => {
+            btn.addEventListener('click', () => this.intermediateConfirmSelection());
+        });
+
+        const intermediateSpace = document.getElementById('intermediateSpaceBtn');
+        if (intermediateSpace) {
+            intermediateSpace.addEventListener('click', () => this.intermediateFinishWord());
+        }
+
+        // TTS MBS de controles operativos esenciales del Modo Intermedio.
+        const intermediateBack = document.getElementById('intermediateBackBtn');
+        if (intermediateBack) {
+            intermediateBack.addEventListener('focus', () => {
+                const T = this.intermediateText[this.idiomaActual] || this.intermediateText['es-AR'];
+                if (this.modoVoz) this._speakText(T.back, {cancel:true, rate:0.9});
+            });
+        }
+
+        const intermediateTone = document.getElementById('intermediateToneToggle');
+        if (intermediateTone) {
+            intermediateTone.addEventListener('focus', () => {
+                const T = this.intermediateText[this.idiomaActual] || this.intermediateText['es-AR'];
+                if (this.modoVoz) {
+                    this._speakText(
+                        this.intermediateToneEnabled ? T.toneFocusOn : T.toneFocusOff,
+                        {cancel:true, rate:0.9}
+                    );
+                }
+            });
+        }
+
         // MBS 2026-08-07: cargar voces y restaurar el texto de prueba.
         this._initTTSVoices();
         this._ensureDemoControls();
@@ -111,10 +1212,23 @@ const APP = {
 // --- ACÁ PEGALO (Dentro de init) ---
         document.querySelectorAll('button').forEach(btn => {
             btn.addEventListener('focus', () => {
+                // La pantalla inicial queda exclusivamente a cargo de Narrador/NVDA/VoiceOver.
+                // MBS no pronuncia controles mientras esta pantalla está activa.
+                if (this.enPantallaInicio) return;
+
                 // Los botones de idioma se anuncian DESPUÉS de aplicar el nuevo idioma.
                 // Si se leen al recibir foco, el evento focus ocurre antes del click y
                 // puede pronunciar "Español/English/Français" con la voz anterior.
-                if (['btnES', 'btnPT', 'btnEN', 'btnFR'].includes(btn.id)) return;
+                if (['btnES', 'btnPT', 'btnEN', 'btnFR',
+                     'startModeInitial', 'startModeIntermediate', 'startModeAdvanced',
+                     'startLangES', 'startLangPT', 'startLangEN', 'startLangFR',
+                     'startThemeDark', 'startThemeLight', 'startVoiceOn', 'startVoiceOff',
+                     'btnStartSystem', 'initialBackBtn', 'intermediateBackBtn',
+                     'intermediateToneToggle', 'intermediateSpaceBtn'].includes(btn.id)) return;
+
+                // Los puntos del Modo Intermedio tienen feedback MBS específico:
+                // sólo "1"..."6". Se excluyen del lector genérico de botones.
+                if (btn.hasAttribute('data-intermediate-point')) return;
 
                 // Prioridad: aria-label explícito > texto limpio del botón
                 // Se eliminan emojis, símbolos y caracteres no pronunciables
@@ -211,10 +1325,27 @@ const APP = {
             if (e.data === "PONG_OK") return;
             const data = JSON.parse(e.data);
 
+            // POC 03 — En Modo Inicial una máscara de un solo punto
+            // se interpreta como identificación individual del punto.
+            if (!this.enPantallaInicio && this.modoSeleccionado === 'inicial') {
+                const mInicial = parseInt(data.m);
+                const puntoPorMascara = {1:1, 2:2, 4:3, 8:4, 16:5, 32:6};
+                if (puntoPorMascara[mInicial]) {
+                    this.initialPresentPoint(puntoPorMascara[mInicial]);
+                }
+                return;
+            }
+
+            // POC 05 — Modo Intermedio: sin métricas ni escritura continua.
+            if (!this.enPantallaInicio && this.modoSeleccionado === 'intermedio') {
+                this.intermediateHandleWs(data);
+                return;
+            }
+
             // --- 1. BLOQUE DE COMILLAS (CON MÉTRICAS) ---
             if (data.val === "COMILLA") {
                 if (this.palabraActual.length > 0) {
-                    this._speakText(this.palabraActual, { cancel: false });
+                    this._speakAdvancedWord(this.palabraActual, { cancel: false });
                     this.palabraActual = ""; 
                 }
                 this.buffer.value += '"';
@@ -243,7 +1374,7 @@ const APP = {
             // --- 2. BLOQUE DE APÓSTROFE (CON MÉTRICAS) ---
             if (data.val === "APOSTROFE") {
                 if (this.palabraActual.length > 0) {
-                    this._speakText(this.palabraActual, { cancel: false });
+                    this._speakAdvancedWord(this.palabraActual, { cancel: false });
                     this.palabraActual = ""; 
                 }
                 this.buffer.value += "'";
@@ -357,7 +1488,7 @@ const APP = {
 
                     if (charFinal === " " || charFinal === "\n") {
                         if (this.modoVoz && this.palabraActual) {
-                            this._speakText(this.palabraActual, { cancel: false });
+                            this._speakAdvancedWord(this.palabraActual, { cancel: false });
                         }
                         this.palabraActual = "";
                     } else {
@@ -907,9 +2038,57 @@ const APP = {
         return 1.35;
     },
 
+    // POC 06.12 — Alias fonéticos en UNA sola locución.
+    //
+    // La POC 06.11 evitó las expansiones, pero una utterance por letra generó
+    // pausas audibles y atraso de la cola TTS a velocidades altas.
+    //
+    // Solución: para los pocos tokens conflictivos ya detectados en pruebas,
+    // se usa un alias pronunciable completo en una única utterance.
+    // El texto escrito/exportado NO cambia.
+    _advancedSpeechAlias: function(word) {
+        const raw = String(word || '').trim();
+        if (!raw) return raw;
+
+        const aliases = {
+            'es-AR': {
+                'cal': 'ce a ele',
+                'cm':  'ce eme',
+                'mm':  'eme eme',
+                'km':  'ka eme',
+                'kg':  'ka ge',
+                'ml':  'eme ele',
+                'min': 'eme i ene'
+            },
+            'pt-BR': {
+                'kg':  'cá gê',
+                'ml':  'eme ele',
+                'min': 'eme i ene'
+            },
+            'fr-FR': {
+                'min': 'ème i enne'
+            },
+            'en-US': {}
+        };
+
+        const byLang = aliases[this.idiomaActual] || aliases['es-AR'];
+        const normalized = raw.toLocaleLowerCase(this.idiomaActual || undefined);
+        return byLang[normalized] || raw;
+    },
+
+    _speakAdvancedWord: function(word, opts = {}) {
+        const prepared = this._advancedSpeechAlias(word);
+        return this._speakText(prepared, opts);
+    },
+
     _speakText: function(text, opts = {}) {
         if (!text || !('speechSynthesis' in window)) return null;
-        if (!this.modoVoz && !opts.force) return null;
+
+        // MUTE MAESTRO:
+        // si Voz educativa MBS está desactivada, ninguna locución propia
+        // del MBS puede ejecutarse, incluso aunque una llamada antigua
+        // conserve opts.force=true.
+        if (!this.modoVoz) return null;
 
         const synth = window.speechSynthesis;
         const lang = opts.lang || this.idiomaActual || 'es-AR';
@@ -969,7 +2148,7 @@ const APP = {
             tts_limpiar:'Limpiar', tts_csv:'Exportar C S V', tts_txt:'Exportar texto',
             tts_velocidad:'Velocidad',
             btn_speed_down:'Disminuir velocidad', btn_speed_up:'Aumentar velocidad',
-            tts_listo:'Sistema listo', tts_idioma:'Español',
+            tts_listo:'Sistema listo', tts_idioma:'Español', btn_volver_inicio:'Volver a inicio', tts_sesion_activa_volver:'Detenga la sesión antes de volver al inicio', modo_avanzado:'MODO AVANZADO',
             btn_click_on:'Click: ON', btn_click_off:'Click: OFF',
             tts_click_on:'Click activado', tts_click_off:'Click desactivado',
 			tts_comilla: "Comilla",
@@ -992,7 +2171,7 @@ const APP = {
             modal_chars:'Caracteres', modal_words:'Palavras', modal_dur:'Duração',
             modal_avgms:'ms/tecla méd.', modal_maxwpm:'PPM máximo',
             modal_cerrar:'Fechar', modal_csv:'Baixar CSV',
-            tts_listo:'Sistema pronto', tts_idioma:'Português',
+            tts_listo:'Sistema pronto', tts_idioma:'Português', btn_volver_inicio:'Voltar ao início', tts_sesion_activa_volver:'Encerre a sessão antes de voltar ao início', modo_avanzado:'MODO AVANÇADO',
             btn_voz_on:'Voz: ON', btn_voz_off:'Voz: OFF',
             lbl_sonido_tipo:'Tipo de som',
             tts_iniciar:'Iniciar sessão', tts_detener:'Encerrar sessão',
@@ -1022,7 +2201,7 @@ const APP = {
             modal_chars:'Caractères', modal_words:'Mots', modal_dur:'Durée',
             modal_avgms:'ms/touche moy.', modal_maxwpm:'MPM maximum',
             modal_cerrar:'Fermer', modal_csv:'Télécharger CSV',
-            tts_listo:'Système prêt', tts_idioma:'Français',
+            tts_listo:'Système prêt', tts_idioma:'Français', btn_volver_inicio:'Retour au début', tts_sesion_activa_volver:'Arrêtez la session avant de revenir au début', modo_avanzado:'MODE AVANCÉ',
             btn_voz_on:'Voix : ON', btn_voz_off:'Voix : OFF',
             lbl_sonido_tipo:'Type de son',
             tts_iniciar:'Session démarrée', tts_detener:'Session arrêtée',
@@ -1051,7 +2230,7 @@ const APP = {
             modal_chars:'Characters', modal_words:'Words', modal_dur:'Duration',
             modal_avgms:'avg ms/key', modal_maxwpm:'Max WPM',
             modal_cerrar:'Close', modal_csv:'Download CSV',
-            tts_listo:'System ready', tts_idioma:'English',
+            tts_listo:'System ready', tts_idioma:'English', btn_volver_inicio:'Back to start', tts_sesion_activa_volver:'Stop the session before returning to start', modo_avanzado:'ADVANCED MODE',
             btn_voz_on:'Voice: ON', btn_voz_off:'Voice: OFF',
             lbl_sonido_tipo:'Sound type',
             tts_iniciar:'Session started', tts_detener:'Session stopped',
@@ -1102,6 +2281,17 @@ const APP = {
         set('lbl_ms', T.lbl_ms);
         set('lbl_wpmbar', T.lbl_wpmbar);
 
+        const advancedBack = document.getElementById('advancedBackBtn');
+        if (advancedBack) {
+            advancedBack.textContent = T.btn_volver_inicio || 'Volver a inicio';
+            advancedBack.setAttribute('aria-label', T.btn_volver_inicio || 'Volver a inicio');
+        }
+
+        const modeCurrent = document.getElementById('modeCurrent');
+        if (modeCurrent && this.modoSeleccionado === 'avanzado') {
+            modeCurrent.textContent = T.modo_avanzado || 'MODO AVANZADO';
+        }
+
         const btnSpeedDown = document.getElementById('btnSpeedDown');
         const btnSpeedUp   = document.getElementById('btnSpeedUp');
         if (btnSpeedDown) btnSpeedDown.setAttribute('aria-label', T.btn_speed_down || 'Disminuir velocidad');
@@ -1147,6 +2337,8 @@ const APP = {
         else if (lang === 'SET_FR') this.idiomaActual = 'fr-FR';
 
         const targetLang = this.idiomaActual;
+        const suppressAnnouncement = !!this._suppressLangAnnouncementOnce;
+        this._suppressLangAnnouncementOnce = false;
 
         document.getElementById('btnES').classList.toggle('active', lang === 'SET_ES');
         document.getElementById('btnPT').classList.toggle('active', lang === 'SET_PT');
@@ -1157,17 +2349,20 @@ const APP = {
 
         this._aplicarIdioma();
         this._applyLessonLanguage();
+        this.initialApplyLanguage();
+        this.intermediateApplyLanguage();
         const T = this.I18N[targetLang];
         this._updateDemoLanguage();
         this._updateVoiceStatus();
 
-        // Pequeña espera para que el navegador estabilice la voz recién seleccionada.
-        // El chequeo de targetLang evita anunciar un idioma viejo si el usuario cambia
-        // muy rápido entre botones.
-        this._langTtsTimer = setTimeout(() => {
-            if (this.idiomaActual !== targetLang) return;
-            this._speakText(T.tts_idioma, { cancel: true, force: true, lang: targetLang });
-        }, 250);
+        // Al ingresar desde la portada no se anuncia otra vez el idioma,
+        // porque esa locución cancelaría la frase propia del modo.
+        if (!suppressAnnouncement) {
+            this._langTtsTimer = setTimeout(() => {
+                if (this.idiomaActual !== targetLang) return;
+                this._speakText(T.tts_idioma, { cancel: true, force: true, lang: targetLang });
+            }, 250);
+        }
     },
 
     downloadCSV: function() {
@@ -1409,6 +2604,17 @@ const APP = {
 
     _maskParaCaracter: function(ch) {
         if (ch === ' ' || ch === '\n') return 0;
+
+        // Tokens y signos cuyo valor visible no coincide con el token interno.
+        const specialByLang = {
+            'es-AR': {'"':0x36, "'":0x30, '/':0x0c, '+':0x16, '%':0x0f, '=':0x36, '*':0x26},
+            'en-US': {'"':0x36, "'":0x30, '/':0x0c, '+':0x16, '%':0x0f, '=':0x36, '*':0x26},
+            'pt-BR': {'"':0x36, "'":0x30, '/':0x0c, '+':0x16, '%':0x0f, '=':0x36, '*':0x26},
+            'fr-FR': {'"':0x36, "'":0x04, '/':0x0c, '+':0x16, '%':0x0f, '=':0x36, '*':0x26}
+        };
+        const specials = specialByLang[this.idiomaActual] || specialByLang['es-AR'];
+        if (Object.prototype.hasOwnProperty.call(specials, ch)) return specials[ch];
+
         const lower = ch.toLowerCase();
         const tabla = this._tablaActual();
         for (const [mask, val] of Object.entries(tabla)) {
@@ -1544,7 +2750,7 @@ const APP = {
 
         if (charSalida === " " || charSalida === "\n") {
             if (this.modoVoz && this.palabraActual) {
-                this._speakText(this.palabraActual, { cancel: false });
+                this._speakAdvancedWord(this.palabraActual, { cancel: false });
             }
             this.palabraActual = "";
 

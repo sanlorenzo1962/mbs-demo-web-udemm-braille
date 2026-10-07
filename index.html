@@ -5,30 +5,312 @@
   <title>MBS (Multilingual Braille System)</title>
  <!--<link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"> -->
-  <link rel="stylesheet" href="styles.css?v=20260925-speed-buttons-v1">
+  <link rel="stylesheet" href="styles.css?v=20261007-poc0613-ajustes-cierre">
 </head>
 <body>
+  <a class="skip-link" href="#startMain">Saltar a la configuración principal</a>
 
-<!-- OVERLAY INICIO -->
-<div id="overlay-inicio" onclick="APP.activarAccesibilidad()">
+<!-- OVERLAY INICIO / CONFIGURACIÓN -->
+<div id="overlay-inicio">
   <div class="overlay-bg"></div>
-  <div class="overlay-content">
+  <div class="overlay-content overlay-config-card" role="dialog" aria-modal="true"
+       aria-labelledby="inicioTitulo" aria-describedby="inicioAyuda">
     <div class="overlay-logo">
-      <img src="udemm_logo.png" alt="UdeMM" style="height:90px; opacity:0.95;">
+      <img src="udemm_logo.png" alt="UdeMM" style="height:82px; opacity:0.95;">
     </div>
-    <div class="overlay-title">MBS (Multilingual Braille System)</div>
-    <div class="overlay-sub">Sistema de Escritura Braille Aumentada</div>
-    <div class="overlay-pulse">
-      <span></span><span></span><span></span><span></span><span></span><span></span>
+
+    <div id="inicioTitulo" class="overlay-title">MBS</div>
+    <div class="overlay-sub">Multilingual Braille System</div>
+
+    <div class="start-config">
+
+      <fieldset class="start-group start-mode-group">
+        <legend>MODO</legend>
+        <div class="start-options start-options-3 start-mode-options">
+          <input class="start-radio" type="radio" name="startMode" id="startModeInitial"
+                 value="inicial" checked onchange="APP.configInicioModo(this.value)">
+          <label class="start-choice" for="startModeInitial">Inicial</label>
+
+          <input class="start-radio" type="radio" name="startMode" id="startModeIntermediate"
+                 value="intermedio" onchange="APP.configInicioModo(this.value)">
+          <label class="start-choice" for="startModeIntermediate">Intermedio</label>
+
+          <input class="start-radio" type="radio" name="startMode" id="startModeAdvanced"
+                 value="avanzado" onchange="APP.configInicioModo(this.value)">
+          <label class="start-choice" for="startModeAdvanced">Avanzado</label>
+        </div>
+      </fieldset>
+
+      <fieldset class="start-group">
+        <legend>IDIOMA</legend>
+        <div class="start-options start-options-4">
+          <input class="start-radio" type="radio" name="startLang" id="startLangES"
+                 value="SET_ES" checked aria-label="Español"
+                 onchange="APP.configInicioIdioma(this.value)">
+          <label class="start-choice" aria-hidden="true" for="startLangES">ES</label>
+
+          <input class="start-radio" type="radio" name="startLang" id="startLangPT"
+                 value="SET_PT" aria-label="Portugués"
+                 onchange="APP.configInicioIdioma(this.value)">
+          <label class="start-choice" aria-hidden="true" for="startLangPT">PT</label>
+
+          <input class="start-radio" type="radio" name="startLang" id="startLangEN"
+                 value="SET_EN" aria-label="Inglés"
+                 onchange="APP.configInicioIdioma(this.value)">
+          <label class="start-choice" aria-hidden="true" for="startLangEN">EN</label>
+
+          <input class="start-radio" type="radio" name="startLang" id="startLangFR"
+                 value="SET_FR" aria-label="Francés"
+                 onchange="APP.configInicioIdioma(this.value)">
+          <label class="start-choice" aria-hidden="true" for="startLangFR">FR</label>
+        </div>
+      </fieldset>
+
+      <fieldset class="start-group start-access-group">
+        <legend>ACCESIBILIDAD VISUAL</legend>
+        <p class="sr-only" id="accessHelp">A menos y A más modifican el tamaño del texto. A restablece el tamaño. Los botones siguientes cambian contraste, tema y restablecen la accesibilidad visual.</p>
+
+        <div class="start-access-bar" role="group" aria-label="Accesibilidad visual" aria-describedby="accessHelp">
+          <button type="button" class="access-tool access-tool-text"
+                  id="accessTextMinus"
+                  aria-label="Disminuir tamaño de texto"
+                  title="Disminuir tamaño de texto"
+                  onclick="APP.ajustarTexto(-10)">A−</button>
+
+          <button type="button" class="access-tool access-tool-text"
+                  id="accessTextReset"
+                  aria-label="Restablecer tamaño de texto"
+                  title="Restablecer tamaño de texto"
+                  onclick="APP.restablecerTexto()">A</button>
+
+          <button type="button" class="access-tool access-tool-text"
+                  id="accessTextPlus"
+                  aria-label="Aumentar tamaño de texto"
+                  title="Aumentar tamaño de texto"
+                  onclick="APP.ajustarTexto(10)">A+</button>
+
+          <span id="accessTextValue" class="access-value" aria-live="polite">100%</span>
+
+          <button type="button" class="access-tool access-tool-round"
+                  id="accessContrast"
+                  aria-label="Activar alto contraste"
+                  title="Contraste normal / alto"
+                  onclick="APP.alternarContraste()">◐</button>
+
+          <button type="button" class="access-tool access-tool-round"
+                  id="accessTheme"
+                  aria-label="Cambiar a tema claro"
+                  title="Tema claro / oscuro"
+                  onclick="APP.alternarTema()">☀</button>
+
+          <button type="button" class="access-tool access-tool-round"
+                  id="accessVisualReset"
+                  aria-label="Restablecer accesibilidad visual"
+                  title="Restablecer accesibilidad visual"
+                  onclick="APP.restablecerAccesibilidadVisual()">↺</button>
+        </div>
+      </fieldset>
+
+      <fieldset class="start-group start-voice-group">
+        <legend>VOZ EDUCATIVA MBS</legend>
+        <p id="voiceHelp" class="start-help">Se aplica dentro del modo de trabajo. Esta pantalla de inicio no utiliza la voz del MBS.</p>
+        <div class="start-options start-options-2" aria-describedby="voiceHelp">
+          <input class="start-radio" type="radio" name="startVoice" id="startVoiceOn"
+                 value="on" checked onchange="APP.configInicioVoz(true)">
+          <label class="start-choice" for="startVoiceOn">Activada</label>
+
+          <input class="start-radio" type="radio" name="startVoice" id="startVoiceOff"
+                 value="off" onchange="APP.configInicioVoz(false)">
+          <label class="start-choice" for="startVoiceOff">Desactivada</label>
+        </div>
+      </fieldset>
+
     </div>
-    <button class="btn-start">INICIAR SISTEMA</button>
-    <p class="overlay-hint">Tocá en cualquier lugar para activar el audio</p>
+
+    <button id="btnStartSystem" type="button" class="btn-start"
+            onclick="APP.activarAccesibilidad()">INICIAR</button>
+    <p id="inicioAyuda" class="overlay-hint">
+      Elegí modo, idioma y voz educativa. Ajustá la accesibilidad visual si la necesitás. Luego pulsá INICIAR.
+    </p>
+  </div>
+</div>
+
+<!-- PLACEHOLDER TEMPORAL DE MODOS AÚN NO INTEGRADOS -->
+<div id="mode-placeholder" class="mode-placeholder" hidden>
+  <div class="mode-placeholder-card" role="status" aria-live="polite">
+    <div class="mode-placeholder-kicker">MBS · POC 02</div>
+    <h1 id="modePlaceholderTitle">Modo seleccionado</h1>
+    <p id="modePlaceholderText">
+      Este modo quedó seleccionado correctamente. Su interfaz se integrará en el siguiente paso.
+    </p>
+    <button type="button" class="btn-start" onclick="APP.volverAInicio()">VOLVER A INICIO</button>
   </div>
 </div>
 
 <div id="aria-lector" aria-live="assertive" style="position:absolute; left:-9999px;"></div>
 
-<div class="layout">
+
+<!-- POC 03 — MODO INICIAL REAL -->
+<div id="mode-inicial" class="initial-mode-screen" hidden inert>
+  <div class="initial-shell">
+
+    <header class="initial-topbar">
+      <div class="initial-brand">
+        <strong>MBS</strong>
+        <span id="initialTitle">Modo Inicial</span>
+        <span id="initialLangBadge" class="initial-badge">ES</span>
+      </div>
+      <button type="button" id="initialBackBtn" class="initial-back" onclick="APP.volverAInicio()">
+        Volver a inicio
+      </button>
+    </header>
+
+    <main class="initial-main">
+      <div id="initialStatus" class="initial-status">Seleccione un punto</div>
+
+      <div class="initial-cell" aria-label="Celda Braille de seis puntos">
+        <div class="initial-dot" id="initialDot1">1</div>
+        <div class="initial-dot" id="initialDot4">4</div>
+        <div class="initial-dot" id="initialDot2">2</div>
+        <div class="initial-dot" id="initialDot5">5</div>
+        <div class="initial-dot" id="initialDot3">3</div>
+        <div class="initial-dot" id="initialDot6">6</div>
+      </div>
+
+      <div class="initial-keyboard-wrap">
+        <div id="initialKeyboardLabel" class="initial-keyboard-label">Disposición del teclado MBS</div>
+        <div class="initial-keyboard" aria-labelledby="initialKeyboardLabel">
+          <div class="initial-key initial-reference" aria-hidden="true">EN</div>
+          <button type="button" class="initial-key" data-initial-point="3" aria-label="Punto 3">3</button>
+          <button type="button" class="initial-key" data-initial-point="2" aria-label="Punto 2">2</button>
+          <button type="button" class="initial-key" data-initial-point="1" aria-label="Punto 1">1</button>
+          <div class="initial-key initial-reference initial-space" aria-hidden="true">SP</div>
+          <button type="button" class="initial-key" data-initial-point="4" aria-label="Punto 4">4</button>
+          <button type="button" class="initial-key" data-initial-point="5" aria-label="Punto 5">5</button>
+          <button type="button" class="initial-key" data-initial-point="6" aria-label="Punto 6">6</button>
+          <div class="initial-key initial-reference" aria-hidden="true">EN</div>
+        </div>
+      </div>
+
+      <div class="initial-tone-control">
+        <label id="initialToneLabel" for="initialToneDuration">
+          Duración del tono:
+          <strong id="initialToneDurationValue">Nivel 5</strong>
+        </label>
+        <input id="initialToneDuration" type="range"
+               min="1" max="10" step="1" value="5"
+               aria-valuemin="1" aria-valuemax="10"
+               aria-valuenow="5" aria-valuetext="Nivel 5">
+        <div class="initial-range-labels" aria-hidden="true">
+          <span>1</span><span>10</span>
+        </div>
+      </div>
+<p id="initialHint" class="initial-hint">
+        Los puntos 1–6 se presentan individualmente: se iluminan, reproducen su tono y se apagan automáticamente.
+        EN y SP muestran la disposición física del MBS y no tienen función en este nivel.
+      </p>
+    </main>
+  </div>
+</div>
+
+
+<!-- POC 05 — MODO INTERMEDIO -->
+<div id="mode-intermedio" class="intermediate-mode-screen" hidden inert>
+  <div class="intermediate-shell">
+    <header class="intermediate-topbar">
+      <div class="intermediate-brand">
+        <strong>MBS</strong>
+        <span id="intermediateTitle">Modo Intermedio</span>
+        <span id="intermediateLangBadge" class="intermediate-badge">ES</span>
+      </div>
+      <button type="button" id="intermediateBackBtn" class="intermediate-back"
+              onclick="APP.volverAInicio()">Volver a inicio</button>
+    </header>
+
+    <main class="intermediate-main">
+      <div id="intermediateStatus" class="intermediate-status">Escriba una letra</div>
+
+      <div class="intermediate-work">
+        <div class="intermediate-cell-card">
+          <div class="intermediate-cell" aria-label="Celda Braille de seis puntos">
+            <div class="intermediate-dot" id="intermediateDot1">1</div>
+            <div class="intermediate-dot" id="intermediateDot4">4</div>
+            <div class="intermediate-dot" id="intermediateDot2">2</div>
+            <div class="intermediate-dot" id="intermediateDot5">5</div>
+            <div class="intermediate-dot" id="intermediateDot3">3</div>
+            <div class="intermediate-dot" id="intermediateDot6">6</div>
+          </div>
+
+          <div class="intermediate-char-card">
+            <div id="intermediateCharLabel" class="intermediate-small-label">Carácter</div>
+            <div id="intermediateChar" class="intermediate-char" aria-live="off">—</div>
+            <div class="intermediate-badges" aria-label="Estado">
+              <span id="intermediateMayBadge" class="intermediate-state-badge">MAY.</span>
+              <span id="intermediateNumBadge" class="intermediate-state-badge">NÚM.</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="intermediate-text-card">
+          <div id="intermediateBuildingLabel" class="intermediate-small-label">Escribiendo</div>
+          <div id="intermediateBuilding" class="intermediate-building">—</div>
+
+          <div id="intermediateLastLabel" class="intermediate-small-label intermediate-last-label">
+            Último resultado
+          </div>
+          <div id="intermediateLast" class="intermediate-last">—</div>
+        </div>
+      </div>
+
+      <div class="intermediate-keyboard-wrap">
+        <div id="intermediateKeyboardLabel" class="intermediate-keyboard-label">
+          Disposición del teclado MBS
+        </div>
+        <div class="intermediate-keyboard" aria-labelledby="intermediateKeyboardLabel">
+          <button type="button" class="intermediate-key intermediate-enter"
+                  data-intermediate-enter="1" aria-label="Confirmar celda">EN</button>
+
+          <button type="button" class="intermediate-key" data-intermediate-point="3"
+                  aria-label="Punto 3">3</button>
+          <button type="button" class="intermediate-key" data-intermediate-point="2"
+                  aria-label="Punto 2">2</button>
+          <button type="button" class="intermediate-key" data-intermediate-point="1"
+                  aria-label="Punto 1">1</button>
+
+          <button type="button" id="intermediateSpaceBtn"
+                  class="intermediate-key intermediate-space"
+                  aria-label="Espacio. Finalizar palabra o número">SP</button>
+
+          <button type="button" class="intermediate-key" data-intermediate-point="4"
+                  aria-label="Punto 4">4</button>
+          <button type="button" class="intermediate-key" data-intermediate-point="5"
+                  aria-label="Punto 5">5</button>
+          <button type="button" class="intermediate-key" data-intermediate-point="6"
+                  aria-label="Punto 6">6</button>
+
+          <button type="button" class="intermediate-key intermediate-enter"
+                  data-intermediate-enter="1" aria-label="Confirmar celda">EN</button>
+        </div>
+      </div>
+
+      <div class="intermediate-controls">
+        <button type="button" id="intermediateToneToggle"
+                class="intermediate-toggle"
+                aria-pressed="true"
+                onclick="APP.intermediateToggleTone()">
+          Tonos de pulsación: ACTIVADOS
+        </button>
+      </div>
+
+      <p id="intermediateHint" class="intermediate-hint">
+        EN confirma la celda. MAY. afecta sólo a la próxima letra. NÚM. permanece activo hasta SP.
+        SP pronuncia la palabra o número completo y prepara una nueva entrada.
+      </p>
+    </main>
+  </div>
+</div>
+
+<div class="layout" id="app-main" inert>
   <div class="card">
 
     <!-- HEADER -->
@@ -41,6 +323,14 @@
         </div>
       </div>
       <div class="header-right">
+        <div class="advanced-header-actions">
+          <div id="modeCurrent" class="mode-current">MODO AVANZADO</div>
+          <button type="button"
+                  id="advancedBackBtn"
+                  class="advanced-back"
+                  onclick="APP.advancedBackToStart()"
+                  aria-label="Volver a inicio">Volver a inicio</button>
+        </div>
         <div id="status" class="status-tag">
           <span class="status-dot"></span> CONECTADO
         </div>
@@ -219,43 +509,7 @@
 </div>
 
 
-<!-- PANEL LATERAL DE LECCIONES -->
-<button id="lessonSidebarToggle" class="lesson-sidebar-toggle" onclick="APP.toggleLessonSidebar()" aria-controls="lessonSidebar" aria-expanded="false">
-  <span aria-hidden="true">🎓</span><span id="lessonToggleText">Lecciones</span>
-</button>
-<aside id="lessonSidebar" class="lesson-sidebar" aria-label="Modo lecciones" aria-hidden="true">
-  <div class="lesson-sidebar-header">
-    <div>
-      <div class="panel-label"><span id="lessonModeLabel">🎓 MODO LECCIONES</span></div>
-      <div id="lessonSubtitle" class="lesson-sidebar-subtitle">Prueba de concepto pedagógica</div>
-    </div>
-    <button id="lessonCloseBtn" class="lesson-sidebar-close" onclick="APP.toggleLessonSidebar(false)" aria-label="Cerrar panel de lecciones">×</button>
-  </div>
-  <div class="lesson-sidebar-body">
-    <div id="lessonChooser" class="lesson-chooser">
-      <button onclick="APP.startLesson('letters')" class="btn-action lesson-select">
-        <strong id="lesson1Title">Lección 1</strong><span id="lesson1Desc">Primeras letras: a–f</span>
-      </button>
-      <button onclick="APP.startLesson('word')" class="btn-action lesson-select">
-        <strong id="lesson2Title">Lección 2</strong><span id="lesson2Desc">Primera palabra: CASA</span>
-      </button>
-    </div>
-    <div id="lessonPanel" class="lesson-panel" hidden>
-      <div id="lessonTitle" class="lesson-title">Lección</div>
-      <div id="lessonInstruction" class="lesson-instruction">Letra a escribir:</div>
-      <div id="lessonTarget" class="lesson-target" aria-live="polite"></div>
-      <div id="lessonProgress" class="lesson-progress" aria-live="polite"></div>
-      <div id="lessonFeedback" class="lesson-feedback" aria-live="assertive"></div>
-      <div class="lesson-stats">
-        <span><span id="lessonHitsLabel">Aciertos</span>: <strong id="lessonHits">0</strong></span>
-        <span><span id="lessonErrorsLabel">Errores</span>: <strong id="lessonErrors">0</strong></span>
-      </div>
-      <button id="lessonExitBtn" onclick="APP.stopLesson()" class="btn-action lesson-exit">Salir de la lección</button>
-    </div>
-  </div>
-  <div id="lessonNote" class="lesson-sidebar-note">En la demo se responde con el teclado convencional. En el MBS real, mediante el teclado braille físico.</div>
-</aside>
-<div id="lessonSidebarBackdrop" class="lesson-sidebar-backdrop" onclick="APP.toggleLessonSidebar(false)"></div>
+<!-- PANEL DE LECCIONES RETIRADO EN POC DE INTEGRACION -->
 
 <!-- MODAL RESUMEN DE SESIÓN -->
 <div id="modalResumen" class="modal-overlay" style="display:none">
@@ -327,6 +581,6 @@
   </div>
 </div>
 
-<script src="app.js?v=20260925-v9-feedback-lecciones"></script>
+<script src="app.js?v=20261007-poc0613-ajustes-cierre"></script>
 </body>
 </html>
