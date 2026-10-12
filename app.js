@@ -1,6 +1,6 @@
 const APP = {
     logData: [],
-    nombreUsuario: "MARCELO",
+    nombreUsuario: "ESTUDIANTE",
     dots: [],
     buffer: null,
     bigChar: null,
@@ -2495,13 +2495,13 @@ const APP = {
         const btnOk  = document.getElementById('btnNombreOk');
         const btnCan = document.getElementById('btnNombreCancelar');
 
-        input.value = this.nombreUsuario !== 'ANONIMO' ? this.nombreUsuario : '';
+        input.value = this.nombreUsuario !== 'ESTUDIANTE' ? this.nombreUsuario : '';
         overlay.style.display = 'flex';
         setTimeout(() => input.focus(), 80);
 
         const arrancar = () => {
             const nombre = input.value.trim();
-            this.nombreUsuario = nombre || 'ANONIMO';
+            this.nombreUsuario = nombre || 'ESTUDIANTE';
             overlay.style.display = 'none';
             this._iniciarSesion();
         };
