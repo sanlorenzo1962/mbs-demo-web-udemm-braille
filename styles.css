@@ -3207,3 +3207,22 @@ body.mbs-text-140 .intermediate-state-badge{
   font-size:13px;
   padding:4px 8px;
 }
+
+/* MBS: ajuste visual exclusivo de identidad institucional. */
+.mbs-institutional-brand { display:flex; align-items:center; justify-content:center; gap:clamp(12px,2vw,26px); min-width:0; }
+.mbs-institutional-udemm { display:block; width:clamp(112px,18vw,190px); height:auto; max-height:86px; object-fit:contain; }
+.mbs-institutional-separator { display:block; flex:0 0 1px; height:65px; background:var(--border-bright, #73869a); opacity:.85; }
+.mbs-institutional-name { min-width:0; text-align:left; }
+.mbs-institutional-name .overlay-title { font-size:clamp(2rem,4vw,3rem); letter-spacing:.09em; }
+.mbs-institutional-name .overlay-sub { font-size:clamp(.68rem,1.35vw,.95rem); letter-spacing:.025em; }
+.mbs-institutional-brand-start { margin:0 auto 14px; }
+.mbs-institutional-brand-advanced { justify-content:flex-start; }
+.mbs-institutional-brand-advanced .title { font-size:1.5rem; line-height:1.2; }
+.mbs-institutional-brand-advanced .subtitle { font-size:.77rem; margin-top:3px; }
+@media(max-width:560px) {
+  .mbs-institutional-brand { gap:10px; }
+  .mbs-institutional-udemm { width:clamp(90px,28vw,135px); }
+  .mbs-institutional-separator { height:50px; }
+  .mbs-institutional-brand-advanced .title { font-size:1.1rem; }
+  .mbs-institutional-brand-advanced .subtitle { font-size:.63rem; }
+}
